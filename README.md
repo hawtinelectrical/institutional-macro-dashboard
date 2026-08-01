@@ -1,30 +1,33 @@
-# Institutional Macro Dashboard — Cloud v3
+# Institutional Macro Dashboard — Cloud v4
 
-Upload the **contents of this folder** directly to the root of a new GitHub repository.
+Version 4 adds:
 
-The repository root must show:
+- dashboard navigation
+- institutional COT-flow currency ranking
+- strongest-versus-weakest pair opportunities
+- pair comparison matrix
+- selected-currency 10-week trend chart
+- money-flow summary cards
+- original detailed 10-week COT table
+- Bonds & Rates placeholder page for the next live module
 
-- `app/`
-- `.python-version`
-- `.gitignore`
+## Update the live site
+
+Replace these files in GitHub:
+
+- `app/main.py`
+- `app/static/index.html`
 - `README.md`
-- `render.yaml`
-- `requirements.txt`
 
-Do not upload the outer folder itself.
+Commit the changes. Render auto-deploys the update.
 
-## Deploy on Render
+## Strength model
 
-1. Create a new private GitHub repository.
-2. Upload the six root items listed above.
-3. In Render, select **New → Blueprint**.
-4. Select the repository.
-5. Confirm Render detects `render.yaml`.
-6. Apply the Blueprint.
+The v4 ranking follows the selected interpretation:
 
-Render creates:
+- rising Commercial net positioning adds bullish flow
+- rising Non-commercial net positioning is treated inversely
+- raw flow = 10-week Commercial change minus 10-week Non-commercial change
+- raw flow is scaled from 0 to 100 across the eight currencies
 
-- `institutional-macro-dashboard`
-- `institutional-macro-db`
-
-The first CFTC refresh runs automatically after deployment.
+This is a transparent context model, not a guaranteed price forecast.
