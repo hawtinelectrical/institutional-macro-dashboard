@@ -14,10 +14,22 @@ from typing import Any
 
 import httpx
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from fastapi import BackgroundTasks, FastAPI, HTTPException, Query
+from fastapi import BackgroundTasks, FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
-from sqlalchemy import BigInteger, Date, DateTime, String, create_engine, delete, select
+from sqlalchemy import (
+    BigInteger,
+    Date,
+    DateTime,
+    Float,
+    String,
+    Text,
+    create_engine,
+    delete,
+    inspect,
+    select,
+    text,
+)
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -32,32 +44,32 @@ elif database_url.startswith("postgresql://"):
 
 engine = create_engine(database_url, pool_pre_ping=True)
 logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger("institutional-dashboard-v6")
+logger = logging.getLogger("institutional-dashboard-v6-rebuilt")
 
-CURRENCY_MARKETS: dict[str, list[str]] = {
-    "USD": ["U.S. DOLLAR INDEX", "US DOLLAR INDEX", "DOLLAR INDEX"],
-    "EUR": ["EURO FX"],
-    "GBP": ["BRITISH POUND"],
-    "JPY": ["JAPANESE YEN"],
-    "CHF": ["SWISS FRANC"],
-    "CAD": ["CANADIAN DOLLAR"],
-    "AUD": ["AUSTRALIAN DOLLAR"],
-    "NZD": ["NEW ZEALAND DOLLAR"],
+# Exact CFTC contract codes are preferred. Name aliases are retained only as a fallback.
+# These codes are stable CFTC market identifiers for the selected legacy futures-only contracts.
+MARKET_DEFINITIONS: dict[str, dict[str, Any]] = {
+    "USD": {"code": "098662", "aliases": ["U.S. DOLLAR INDEX", "US DOLLAR INDEX"]},
+    "EUR": {"code": "099741", "aliases": ["EURO FX"]},
+    "GBP": {"code": "096742", "aliases": ["BRITISH POUND"]},
+    "JPY": {"code": "097741", "aliases": ["JAPANESE YEN"]},
+    "CHF": {"code": "092741", "aliases": ["SWISS FRANC"]},
+    "CAD": {"code": "090741", "aliases": ["CANADIAN DOLLAR"]},
+    "AUD": {"code": "232741", "aliases": ["AUSTRALIAN DOLLAR"]},
+    "NZD": {"code": "112741", "aliases": ["NEW ZEALAND DOLLAR"]},
+    "GOLD": {"code": "088691", "aliases": ["GOLD"]},
+    "SILVER": {"code": "084691", "aliases": ["SILVER"]},
+    "PLATINUM": {"code": "076651", "aliases": ["PLATINUM"]},
+    "PALLADIUM": {"code": "075651", "aliases": ["PALLADIUM"]},
 }
 
-METAL_MARKETS: dict[str, list[str]] = {
-    "GOLD": ["GOLD"],
-    "SILVER": ["SILVER"],
-    "PLATINUM": ["PLATINUM"],
-    "PALLADIUM": ["PALLADIUM"],
-}
-
-ALL_MARKETS = {**CURRENCY_MARKETS, **METAL_MARKETS}
+CURRENCY_MARKETS = ["USD", "EUR", "GBP", "JPY", "CHF", "CAD", "AUD", "NZD"]
+METAL_MARKETS = ["GOLD", "SILVER", "PLATINUM", "PALLADIUM"]
 
 BBC_FEEDS = {
-    "BBC Business": "http://newsrss.bbc.co.uk/rss/newsonline_uk_edition/business/rss.xml",
-    "BBC World": "http://newsrss.bbc.co.uk/rss/newsonline_uk_edition/world/rss.xml",
-    "BBC UK": "http://newsrss.bbc.co.uk/rss/newsonline_uk_edition/front_page/rss.xml",
+    "BBC Business": "https://feeds.bbci.co.uk/news/business/rss.xml",
+    "BBC World": "https://feeds.bbci.co.uk/news/world/rss.xml",
+    "BBC UK": "https://feeds.bbci.co.uk/news/uk/rss.xml",
 }
 
 COUNTRY_RULES = {
@@ -88,8 +100,27 @@ class Base(DeclarativeBase):
     pass
 
 
+# IMPORTANT:
+# Keep the existing V5 table and its `currency` column so the live database remains compatible.
+# Metals are stored in a separate V6 table.
 class CotPosition(Base):
     __tablename__ = "cot_positions"
+
+    currency: Mapped[str] = mapped_column(String(20), primary_key=True)
+    report_date: Mapped[date] = mapped_column(Date, primary_key=True)
+    market_name: Mapped[str] = mapped_column(String(255))
+    commercial_long: Mapped[int] = mapped_column(BigInteger)
+    commercial_short: Mapped[int] = mapped_column(BigInteger)
+    commercial_net: Mapped[int] = mapped_column(BigInteger)
+    noncommercial_long: Mapped[int] = mapped_column(BigInteger)
+    noncommercial_short: Mapped[int] = mapped_column(BigInteger)
+    noncommercial_net: Mapped[int] = mapped_column(BigInteger)
+    open_interest: Mapped[int] = mapped_column(BigInteger, default=0)
+    fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class MetalCotPosition(Base):
+    __tablename__ = "metal_cot_positions"
 
     market: Mapped[str] = mapped_column(String(20), primary_key=True)
     report_date: Mapped[date] = mapped_column(Date, primary_key=True)
@@ -108,7 +139,21 @@ class AppStatus(Base):
     __tablename__ = "app_status"
 
     key: Mapped[str] = mapped_column(String(100), primary_key=True)
-    value: Mapped[str] = mapped_column(String(4000))
+    value: Mapped[str] = mapped_column(Text)
+
+
+class SeasonalityValue(Base):
+    __tablename__ = "seasonality_values"
+
+    market: Mapped[str] = mapped_column(String(40), primary_key=True)
+    month_number: Mapped[int] = mapped_column(primary_key=True)
+    tendency: Mapped[float] = mapped_column(Float, default=0.0)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+def initialise_database() -> None:
+    # This is intentionally additive only. It preserves the V5 cot_positions table.
+    Base.metadata.create_all(engine)
 
 
 def to_int(row: dict[str, Any], key: str) -> int:
@@ -116,16 +161,13 @@ def to_int(row: dict[str, Any], key: str) -> int:
     return 0 if value in (None, "") else int(float(value))
 
 
-def initialise_database() -> None:
-    Base.metadata.create_all(engine)
-
-
 async def download_cftc_dataset() -> list[dict[str, Any]]:
     cutoff = (datetime.now(timezone.utc) - timedelta(days=190)).date().isoformat()
     params = {
         "$select": (
             "market_and_exchange_names,report_date_as_yyyy_mm_dd,"
-            "commodity_name,comm_positions_long_all,comm_positions_short_all,"
+            "cftc_contract_market_code,commodity_name,"
+            "comm_positions_long_all,comm_positions_short_all,"
             "noncomm_positions_long_all,noncomm_positions_short_all,open_interest_all"
         ),
         "$where": f"report_date_as_yyyy_mm_dd >= '{cutoff}T00:00:00.000'",
@@ -133,7 +175,7 @@ async def download_cftc_dataset() -> list[dict[str, Any]]:
         "$limit": "50000",
     }
     async with httpx.AsyncClient(
-        headers={"User-Agent": "InstitutionalMacroDashboard/6.0"},
+        headers={"User-Agent": "InstitutionalMacroDashboard/6.1"},
         timeout=90,
         follow_redirects=True,
     ) as client:
@@ -143,37 +185,143 @@ async def download_cftc_dataset() -> list[dict[str, Any]]:
 
 
 def select_market_rows(
-    dataset: list[dict[str, Any]], aliases: list[str]
+    dataset: list[dict[str, Any]], definition: dict[str, Any]
 ) -> list[dict[str, Any]]:
-    aliases_upper = [alias.upper() for alias in aliases]
-    matches = []
-    for row in dataset:
-        market = str(row.get("market_and_exchange_names", "")).upper()
-        commodity = str(row.get("commodity_name", "")).upper()
-        if any(alias in market or alias in commodity for alias in aliases_upper):
-            matches.append(row)
+    code = str(definition["code"])
+    aliases = [alias.upper() for alias in definition["aliases"]]
 
-    if not matches:
+    exact = [
+        row for row in dataset
+        if str(row.get("cftc_contract_market_code", "")).strip() == code
+    ]
+    candidates = exact
+    if not candidates:
+        candidates = []
+        for row in dataset:
+            market = str(row.get("market_and_exchange_names", "")).upper()
+            commodity = str(row.get("commodity_name", "")).upper()
+            if any(alias in market or alias in commodity for alias in aliases):
+                candidates.append(row)
+
+    if not candidates:
         return []
 
-    # Prefer the contract with the greatest number of recent observations.
-    counts: dict[str, int] = {}
-    for row in matches:
-        name = str(row.get("market_and_exchange_names", ""))
-        counts[name] = counts.get(name, 0) + 1
-
-    selected_name = max(counts, key=counts.get)
     unique: dict[str, dict[str, Any]] = {}
-    for row in matches:
-        if row.get("market_and_exchange_names") != selected_name:
-            continue
+    for row in candidates:
         report_date = str(row["report_date_as_yyyy_mm_dd"])[:10]
         unique.setdefault(report_date, row)
-
     return [unique[key] for key in sorted(unique, reverse=True)[:10]]
 
 
 refresh_lock = asyncio.Lock()
+
+
+def upsert_currency_rows(
+    session: Session,
+    market_code: str,
+    rows: list[dict[str, Any]],
+    fetched_at: datetime,
+) -> None:
+    retained_dates: list[date] = []
+    for row in rows:
+        report_date = date.fromisoformat(str(row["report_date_as_yyyy_mm_dd"])[:10])
+        retained_dates.append(report_date)
+        commercial_long = to_int(row, "comm_positions_long_all")
+        commercial_short = to_int(row, "comm_positions_short_all")
+        noncommercial_long = to_int(row, "noncomm_positions_long_all")
+        noncommercial_short = to_int(row, "noncomm_positions_short_all")
+
+        position = session.get(
+            CotPosition,
+            {"currency": market_code, "report_date": report_date},
+        )
+        if position is None:
+            position = CotPosition(
+                currency=market_code,
+                report_date=report_date,
+                market_name="",
+                commercial_long=0,
+                commercial_short=0,
+                commercial_net=0,
+                noncommercial_long=0,
+                noncommercial_short=0,
+                noncommercial_net=0,
+                open_interest=0,
+                fetched_at=fetched_at,
+            )
+            session.add(position)
+
+        position.market_name = str(row.get("market_and_exchange_names", ""))
+        position.commercial_long = commercial_long
+        position.commercial_short = commercial_short
+        position.commercial_net = commercial_long - commercial_short
+        position.noncommercial_long = noncommercial_long
+        position.noncommercial_short = noncommercial_short
+        position.noncommercial_net = noncommercial_long - noncommercial_short
+        position.open_interest = to_int(row, "open_interest_all")
+        position.fetched_at = fetched_at
+
+    if retained_dates:
+        session.execute(
+            delete(CotPosition).where(
+                CotPosition.currency == market_code,
+                CotPosition.report_date.not_in(retained_dates),
+            )
+        )
+
+
+def upsert_metal_rows(
+    session: Session,
+    market_code: str,
+    rows: list[dict[str, Any]],
+    fetched_at: datetime,
+) -> None:
+    retained_dates: list[date] = []
+    for row in rows:
+        report_date = date.fromisoformat(str(row["report_date_as_yyyy_mm_dd"])[:10])
+        retained_dates.append(report_date)
+        commercial_long = to_int(row, "comm_positions_long_all")
+        commercial_short = to_int(row, "comm_positions_short_all")
+        noncommercial_long = to_int(row, "noncomm_positions_long_all")
+        noncommercial_short = to_int(row, "noncomm_positions_short_all")
+
+        position = session.get(
+            MetalCotPosition,
+            {"market": market_code, "report_date": report_date},
+        )
+        if position is None:
+            position = MetalCotPosition(
+                market=market_code,
+                report_date=report_date,
+                market_name="",
+                commercial_long=0,
+                commercial_short=0,
+                commercial_net=0,
+                noncommercial_long=0,
+                noncommercial_short=0,
+                noncommercial_net=0,
+                open_interest=0,
+                fetched_at=fetched_at,
+            )
+            session.add(position)
+
+        position.market_name = str(row.get("market_and_exchange_names", ""))
+        position.commercial_long = commercial_long
+        position.commercial_short = commercial_short
+        position.commercial_net = commercial_long - commercial_short
+        position.noncommercial_long = noncommercial_long
+        position.noncommercial_short = noncommercial_short
+        position.noncommercial_net = noncommercial_long - noncommercial_short
+        position.open_interest = to_int(row, "open_interest_all")
+        position.fetched_at = fetched_at
+
+    if retained_dates:
+        session.execute(
+            delete(MetalCotPosition).where(
+                MetalCotPosition.market == market_code,
+                MetalCotPosition.report_date.not_in(retained_dates),
+            )
+        )
 
 
 async def refresh_cot() -> dict[str, Any]:
@@ -186,59 +334,15 @@ async def refresh_cot() -> dict[str, Any]:
         result: dict[str, Any] = {"updated": [], "failed": []}
 
         with Session(engine) as session:
-            for market_code, aliases in ALL_MARKETS.items():
+            for market_code, definition in MARKET_DEFINITIONS.items():
                 try:
-                    rows = select_market_rows(dataset, aliases)
+                    rows = select_market_rows(dataset, definition)
                     if not rows:
                         raise RuntimeError(f"No matching CFTC contract found for {market_code}")
-
-                    retained_dates: list[date] = []
-                    for row in rows:
-                        report_date = date.fromisoformat(
-                            str(row["report_date_as_yyyy_mm_dd"])[:10]
-                        )
-                        retained_dates.append(report_date)
-                        commercial_long = to_int(row, "comm_positions_long_all")
-                        commercial_short = to_int(row, "comm_positions_short_all")
-                        noncommercial_long = to_int(row, "noncomm_positions_long_all")
-                        noncommercial_short = to_int(row, "noncomm_positions_short_all")
-
-                        position = session.get(
-                            CotPosition,
-                            {"market": market_code, "report_date": report_date},
-                        )
-                        if position is None:
-                            position = CotPosition(
-                                market=market_code,
-                                report_date=report_date,
-                                market_name="",
-                                commercial_long=0,
-                                commercial_short=0,
-                                commercial_net=0,
-                                noncommercial_long=0,
-                                noncommercial_short=0,
-                                noncommercial_net=0,
-                                open_interest=0,
-                                fetched_at=fetched_at,
-                            )
-                            session.add(position)
-
-                        position.market_name = str(row.get("market_and_exchange_names", ""))
-                        position.commercial_long = commercial_long
-                        position.commercial_short = commercial_short
-                        position.commercial_net = commercial_long - commercial_short
-                        position.noncommercial_long = noncommercial_long
-                        position.noncommercial_short = noncommercial_short
-                        position.noncommercial_net = noncommercial_long - noncommercial_short
-                        position.open_interest = to_int(row, "open_interest_all")
-                        position.fetched_at = fetched_at
-
-                    session.execute(
-                        delete(CotPosition).where(
-                            CotPosition.market == market_code,
-                            CotPosition.report_date.not_in(retained_dates),
-                        )
-                    )
+                    if market_code in CURRENCY_MARKETS:
+                        upsert_currency_rows(session, market_code, rows, fetched_at)
+                    else:
+                        upsert_metal_rows(session, market_code, rows, fetched_at)
                     result["updated"].append(market_code)
                 except Exception as exc:  # noqa: BLE001
                     logger.exception("Refresh failed for %s", market_code)
@@ -259,32 +363,40 @@ async def refresh_cot() -> dict[str, Any]:
         return result
 
 
-def market_rows(session: Session, market: str) -> list[dict[str, Any]]:
-    rows = session.scalars(
-        select(CotPosition)
-        .where(CotPosition.market == market)
-        .order_by(CotPosition.report_date.asc())
-    ).all()
-    return [
-        {
-            "report_date": row.report_date.isoformat(),
-            "market_name": row.market_name,
-            "commercial_long": row.commercial_long,
-            "commercial_short": row.commercial_short,
-            "commercial_net": row.commercial_net,
-            "noncommercial_long": row.noncommercial_long,
-            "noncommercial_short": row.noncommercial_short,
-            "noncommercial_net": row.noncommercial_net,
-            "open_interest": row.open_interest,
-        }
-        for row in rows[-10:]
-    ]
+def serialise_position(row: Any) -> dict[str, Any]:
+    return {
+        "report_date": row.report_date.isoformat(),
+        "market_name": row.market_name,
+        "commercial_long": row.commercial_long,
+        "commercial_short": row.commercial_short,
+        "commercial_net": row.commercial_net,
+        "noncommercial_long": row.noncommercial_long,
+        "noncommercial_short": row.noncommercial_short,
+        "noncommercial_net": row.noncommercial_net,
+        "open_interest": row.open_interest,
+    }
 
 
 def build_payload() -> dict[str, Any]:
     with Session(engine) as session:
-        currencies = {market: market_rows(session, market) for market in CURRENCY_MARKETS}
-        metals = {market: market_rows(session, market) for market in METAL_MARKETS}
+        currencies = {}
+        for market in CURRENCY_MARKETS:
+            rows = session.scalars(
+                select(CotPosition)
+                .where(CotPosition.currency == market)
+                .order_by(CotPosition.report_date.asc())
+            ).all()
+            currencies[market] = [serialise_position(row) for row in rows[-10:]]
+
+        metals = {}
+        for market in METAL_MARKETS:
+            rows = session.scalars(
+                select(MetalCotPosition)
+                .where(MetalCotPosition.market == market)
+                .order_by(MetalCotPosition.report_date.asc())
+            ).all()
+            metals[market] = [serialise_position(row) for row in rows[-10:]]
+
         status = session.get(AppStatus, "last_refresh")
 
     parsed_status = None
@@ -306,9 +418,16 @@ def build_payload() -> dict[str, Any]:
 
 def is_stale() -> bool:
     with Session(engine) as session:
-        latest = session.scalar(
+        latest_currency = session.scalar(
             select(CotPosition.fetched_at).order_by(CotPosition.fetched_at.desc())
         )
+        latest_metal = session.scalar(
+            select(MetalCotPosition.fetched_at).order_by(MetalCotPosition.fetched_at.desc())
+        )
+    latest = max(
+        [x for x in [latest_currency, latest_metal] if x is not None],
+        default=None,
+    )
     if latest is None:
         return True
     if latest.tzinfo is None:
@@ -316,8 +435,8 @@ def is_stale() -> bool:
     return datetime.now(timezone.utc) - latest > timedelta(days=6)
 
 
-def clean_html(text: str) -> str:
-    return re.sub(r"<[^>]+>", "", text or "").strip()
+def clean_html(value: str) -> str:
+    return re.sub(r"<[^>]+>", "", value or "").strip()
 
 
 def classify_news(title: str, description: str) -> dict[str, Any]:
@@ -336,60 +455,51 @@ def classify_news(title: str, description: str) -> dict[str, Any]:
     elif any(term in haystack for term in MEDIUM_IMPACT_TERMS):
         impact = "Medium"
 
-    effects = []
-    if "inflation" in haystack or "cpi" in haystack:
-        effects = ["Currencies", "Bond yields", "Precious metals", "Equity indices"]
-    elif "interest rate" in haystack or "central bank" in haystack:
-        effects = ["Currencies", "Government bonds", "Equity indices", "Gold"]
-    elif "oil" in haystack:
-        effects = ["CAD", "Energy equities", "Inflation expectations"]
-    elif "war" in haystack or "sanction" in haystack:
-        effects = ["Risk sentiment", "Gold", "Oil", "Safe-haven currencies"]
-    elif affected:
-        effects = ["Currencies", "Related national equity index", "Government bonds"]
-    else:
-        effects = ["Global risk sentiment"]
-
     return {
         "impact": impact,
         "affected_markets": affected or ["GLOBAL"],
         "countries": countries or ["Global"],
-        "effects": effects,
     }
 
 
 async def fetch_bbc_feed(source: str, url: str) -> list[dict[str, Any]]:
     async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
-        response = await client.get(url, headers={"User-Agent": "InstitutionalMacroDashboard/6.0"})
+        response = await client.get(
+            url,
+            headers={"User-Agent": "InstitutionalMacroDashboard/6.1"},
+        )
         response.raise_for_status()
 
     root = ET.fromstring(response.content)
     items = []
     for item in root.findall(".//item")[:20]:
         title = clean_html(item.findtext("title", default=""))
-        description = clean_html(item.findtext("description", default=""))
+        summary = clean_html(item.findtext("description", default=""))
         link = item.findtext("link", default="")
         published_raw = item.findtext("pubDate", default="")
         try:
             published = parsedate_to_datetime(published_raw).astimezone(timezone.utc).isoformat()
         except Exception:  # noqa: BLE001
             published = published_raw
-        analysis = classify_news(title, description)
+
         items.append({
             "source": source,
             "title": title,
-            "summary": description,
+            "summary": summary,
             "url": link,
             "published": published,
-            **analysis,
+            **classify_news(title, summary),
         })
     return items
 
 
 async def bbc_news() -> dict[str, Any]:
-    tasks = [fetch_bbc_feed(source, url) for source, url in BBC_FEEDS.items()]
-    results = await asyncio.gather(*tasks, return_exceptions=True)
-    items: list[dict[str, Any]] = []
+    results = await asyncio.gather(
+        *[fetch_bbc_feed(source, url) for source, url in BBC_FEEDS.items()],
+        return_exceptions=True,
+    )
+
+    items = []
     errors = []
     for source, result in zip(BBC_FEEDS, results):
         if isinstance(result, Exception):
@@ -397,7 +507,6 @@ async def bbc_news() -> dict[str, Any]:
         else:
             items.extend(result)
 
-    # Deduplicate by title and sort newest first.
     unique: dict[str, dict[str, Any]] = {}
     for item in items:
         unique.setdefault(item["title"], item)
@@ -406,14 +515,18 @@ async def bbc_news() -> dict[str, Any]:
         "items": sorted_items[:40],
         "errors": errors,
         "sources": list(BBC_FEEDS),
-        "licensing_note": "BBC feed use remains subject to BBC feed terms.",
+        "analysis_note": "Impact and affected-market labels are keyword classification, not final AI judgement.",
     }
 
 
 async def trading_economics_calendar() -> dict[str, Any]:
     api_key = os.getenv("TRADING_ECONOMICS_API_KEY")
     if not api_key:
-        return {"configured": False, "events": [], "message": "Add TRADING_ECONOMICS_API_KEY in Render."}
+        return {
+            "configured": False,
+            "events": [],
+            "message": "Add TRADING_ECONOMICS_API_KEY in Render.",
+        }
 
     start = datetime.now(timezone.utc).date().isoformat()
     end = (datetime.now(timezone.utc).date() + timedelta(days=14)).isoformat()
@@ -427,19 +540,16 @@ async def trading_economics_calendar() -> dict[str, Any]:
     for row in raw[:300]:
         importance_number = int(row.get("Importance") or 1)
         impact = {1: "Low", 2: "Medium", 3: "High"}.get(importance_number, "Low")
-        country = row.get("Country") or "Unknown"
-        event = row.get("Event") or row.get("Category") or "Economic event"
         events.append({
             "date": row.get("Date"),
-            "country": country,
-            "event": event,
+            "country": row.get("Country") or "Unknown",
+            "event": row.get("Event") or row.get("Category") or "Economic event",
             "impact": impact,
             "actual": row.get("Actual"),
             "forecast": row.get("Forecast"),
             "previous": row.get("Previous"),
             "source": row.get("Source"),
             "category": row.get("Category"),
-            "affected": [country, "Currency", "Government bonds", "National equity index"],
         })
     return {"configured": True, "events": events}
 
@@ -450,7 +560,7 @@ async def fred_macro() -> dict[str, Any]:
         return {
             "configured": False,
             "series": {},
-            "message": "Add FRED_API_KEY in Render to activate US yields and macro series.",
+            "message": "Add FRED_API_KEY in Render.",
         }
 
     series_ids = {
@@ -474,43 +584,59 @@ async def fred_macro() -> dict[str, Any]:
                 },
             )
             response.raise_for_status()
-            observations = [
-                {"date": row["date"], "value": None if row["value"] == "." else float(row["value"])}
+            output[label] = [
+                {
+                    "date": row["date"],
+                    "value": None if row["value"] == "." else float(row["value"]),
+                }
                 for row in response.json().get("observations", [])
             ]
-            output[label] = observations
     return {"configured": True, "series": output}
 
 
-async def market_data() -> dict[str, Any]:
-    api_key = os.getenv("TRADING_ECONOMICS_API_KEY")
-    if not api_key:
-        return {
-            "configured": False,
-            "indices": [],
-            "metals": [],
-            "message": "Add TRADING_ECONOMICS_API_KEY to activate global indices and metal prices.",
-        }
+def read_seasonality() -> dict[str, list[float]]:
+    output: dict[str, list[float]] = {}
+    with Session(engine) as session:
+        rows = session.scalars(
+            select(SeasonalityValue).order_by(
+                SeasonalityValue.market.asc(),
+                SeasonalityValue.month_number.asc(),
+            )
+        ).all()
+    for row in rows:
+        output.setdefault(row.market, [0.0] * 12)
+        if 1 <= row.month_number <= 12:
+            output[row.market][row.month_number - 1] = row.tendency
+    return output
 
-    # Trading Economics supports market quotes through authenticated endpoints.
-    # Symbols may vary by subscription; failures are returned transparently.
-    symbols = [
-        "UKX:IND", "SPX:IND", "CCMP:IND", "INDU:IND", "DAX:IND",
-        "CAC:IND", "NKY:IND", "HSI:IND", "AS51:IND", "SPTSX:IND",
-        "XAUUSD:CUR", "XAGUSD:CUR",
-    ]
-    url = "https://api.tradingeconomics.com/markets/historical"
-    async with httpx.AsyncClient(timeout=60) as client:
-        response = await client.get(url, params={"c": api_key, "i": ",".join(symbols)})
-        if response.status_code >= 400:
-            return {
-                "configured": True,
-                "indices": [],
-                "metals": [],
-                "error": f"Provider returned {response.status_code}. Check plan and symbols.",
-            }
-        raw = response.json()
-    return {"configured": True, "raw": raw}
+
+def save_seasonality(payload: dict[str, Any]) -> dict[str, Any]:
+    rows = payload.get("markets", [])
+    now = datetime.now(timezone.utc)
+    with Session(engine) as session:
+        for row in rows:
+            market = str(row.get("market", "")).upper().strip()
+            values = row.get("values", [])
+            if not market or len(values) != 12:
+                continue
+            for month_number, tendency in enumerate(values, start=1):
+                existing = session.get(
+                    SeasonalityValue,
+                    {"market": market, "month_number": month_number},
+                )
+                if existing is None:
+                    existing = SeasonalityValue(
+                        market=market,
+                        month_number=month_number,
+                        tendency=float(tendency or 0),
+                        updated_at=now,
+                    )
+                    session.add(existing)
+                else:
+                    existing.tendency = float(tendency or 0)
+                    existing.updated_at = now
+        session.commit()
+    return {"saved": True, "markets": len(rows)}
 
 
 scheduler = AsyncIOScheduler(timezone="UTC")
@@ -535,7 +661,7 @@ async def lifespan(_: FastAPI):
     scheduler.shutdown(wait=False)
 
 
-app = FastAPI(title="Institutional Macro Dashboard Cloud v6", lifespan=lifespan)
+app = FastAPI(title="Institutional Macro Dashboard Cloud v6 Rebuilt", lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
@@ -549,10 +675,9 @@ async def health(background_tasks: BackgroundTasks) -> dict[str, Any]:
     if is_stale():
         background_tasks.add_task(refresh_cot)
     current = build_payload()
-    available = sum(bool(rows) for rows in current["currencies"].values())
     return {
-        "status": "ok" if available else "warming_up",
-        "currencies_available": available,
+        "status": "ok" if any(current["currencies"].values()) else "warming_up",
+        "currencies_available": sum(bool(rows) for rows in current["currencies"].values()),
         "metals_available": sum(bool(rows) for rows in current["metals"].values()),
         "providers": {
             "cftc": True,
@@ -594,9 +719,14 @@ async def macro() -> dict[str, Any]:
     return await fred_macro()
 
 
-@app.get("/api/markets")
-async def markets() -> dict[str, Any]:
-    return await market_data()
+@app.get("/api/seasonality")
+async def get_seasonality() -> dict[str, Any]:
+    return {"markets": read_seasonality()}
+
+
+@app.post("/api/seasonality")
+async def post_seasonality(payload: dict[str, Any]) -> dict[str, Any]:
+    return save_seasonality(payload)
 
 
 @app.get("/api/providers")
