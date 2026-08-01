@@ -35,6 +35,17 @@ nav{display:grid;gap:7px}.nav{width:100%;text-align:left;border:1px solid transp
 .provider{display:flex;justify-content:space-between;gap:10px;padding:12px;border:1px solid #2d4f70;border-radius:10px;background:#102a44}.provider .on{color:#66eab1}.provider .off{color:#ff9aa2}
 .season-grid{overflow:auto}.season-table{min-width:1100px}.season-table input{width:72px;padding:7px;text-align:center}.season-cell.posbg{background:rgba(40,209,139,.18)}.season-cell.negbg{background:rgba(242,95,108,.18)}
 .outlook-tabs{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}.outlook-tab.active{border-color:var(--green);background:#17452f}.outlook-card{padding:16px;border:1px solid #315474;border-radius:12px;background:#102a44}.outlook-card h4{margin:0 0 8px}.score{font-size:2rem;font-weight:900}.evidence{display:grid;gap:7px;margin-top:12px}.evidence div{display:flex;justify-content:space-between;gap:10px;padding:7px 0;border-bottom:1px solid #23415d}
+
+.setup-status{display:inline-flex;padding:7px 10px;border-radius:999px;font-weight:900;font-size:.78rem}
+.setup-status.ready{background:rgba(40,209,139,.2);color:#68edb3;border:1px solid #28d18b}
+.setup-status.watch{background:rgba(245,189,78,.18);color:#ffd67c;border:1px solid #f5bd4e}
+.setup-status.not-ready{background:rgba(49,143,255,.16);color:#8fc2ff;border:1px solid #318fff}
+.setup-status.invalidated{background:rgba(242,95,108,.2);color:#ff9aa2;border:1px solid #f25f6c}
+.check-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:9px;margin-top:12px}
+.check-item{padding:10px;border:1px solid #315474;border-radius:9px;background:#102a44;text-align:center}
+.check-item.yes{border-color:#28d18b;color:#68edb3}
+.check-item.no{color:#9fb3ca}
+
 .message{padding:24px;color:var(--muted);text-align:center}
 footer{text-align:center;color:#7d92aa;padding:18px}
 @media(max-width:1100px){.app{grid-template-columns:1fr}.sidebar{height:auto;position:static}nav{grid-template-columns:repeat(4,1fr)}.nav{text-align:center}.version{display:none}}
@@ -52,6 +63,7 @@ footer{text-align:center;color:#7d92aa;padding:18px}
   <button class="nav" data-page="cot">COT Relationship</button>
   <button class="nav" data-page="currencies">Currency Intelligence</button>
   <button class="nav" data-page="pairs">Pair Rankings</button>
+  <button class="nav" data-page="setups">TradingView Setups</button>
   <button class="nav" data-page="metals">Precious Metals</button>
   <button class="nav" data-page="markets">Global Markets</button>
   <button class="nav" data-page="bonds">Bonds & Rates</button>
@@ -61,7 +73,7 @@ footer{text-align:center;color:#7d92aa;padding:18px}
   <button class="nav" data-page="outlooks">Outlooks</button>
   <button class="nav" data-page="providers">Data Connections</button>
  </nav>
- <div class="version">Version 7.5<br>Currency & Pair Intelligence</div>
+ <div class="version">Version 7.6<br>TradingView Setup Centre</div>
 </aside>
 
 <main class="content">
@@ -178,6 +190,62 @@ footer{text-align:center;color:#7d92aa;padding:18px}
  <article class="panel gold">
   <div class="heading"><div><h3>Why this pair?</h3><p>Transparent evidence for the selected ranking.</p></div><select id="pairDetailSelect"></select></div>
   <div id="pairDetail"></div>
+ </article>
+</section>
+
+
+<section id="setups" class="page">
+ <div class="hero">
+  <div class="kicker">TRADINGVIEW SETUP CENTRE</div>
+  <h2>Macro Bias + Technical Confirmation</h2>
+  <p>Cloud-saved setup tracking for your HTF → MTF → LTF workflow. A pair reaches Ready only when every required technical confirmation is present.</p>
+ </div>
+
+ <div class="grid4">
+  <article class="metric"><span>Ready</span><strong id="setupReadyCount">0</strong><small>All confirmations complete</small></article>
+  <article class="metric"><span>Watch</span><strong id="setupWatchCount">0</strong><small>HTF aligned, waiting for confirmation</small></article>
+  <article class="metric"><span>Not ready</span><strong id="setupNotReadyCount">0</strong><small>Insufficient alignment</small></article>
+  <article class="metric"><span>Invalidated</span><strong id="setupInvalidCount">0</strong><small>Setup cancelled</small></article>
+ </div>
+
+ <article class="panel blue">
+  <div class="heading">
+   <div><h3>Add or update a setup</h3><p>Use the pair rankings as the macro shortlist, then record TradingView structure.</p></div>
+  </div>
+  <div class="controls">
+   <label>Pair <input id="setupPair" placeholder="GBP/JPY"></label>
+   <label>Direction <select id="setupDirection"><option>Long</option><option>Short</option></select></label>
+   <label>HTF <select id="setupHtf"><option>Neutral</option><option>Bullish</option><option>Bearish</option></select></label>
+   <label class="toggle"><input id="setupMtf" type="checkbox"> MTF CHoCH</label>
+   <label class="toggle"><input id="setupLtf" type="checkbox"> LTF CHoCH</label>
+   <label class="toggle"><input id="setupBos" type="checkbox"> BOS</label>
+   <label class="toggle"><input id="setupPullback" type="checkbox"> Pullback ready</label>
+   <label class="toggle"><input id="setupInvalidated" type="checkbox"> Invalidated</label>
+  </div>
+  <textarea id="setupNotes" rows="3" style="width:100%;margin-top:12px" placeholder="Notes, zone, timeframe or conditions still required"></textarea>
+  <div class="controls" style="margin-top:12px">
+   <button id="saveSetup">Save setup</button>
+   <button id="loadTopPair">Load top-ranked pair</button>
+  </div>
+ </article>
+
+ <article class="panel purple">
+  <div class="heading">
+   <div><h3>Setup watchlist</h3><p>Status is calculated automatically from the technical checklist.</p></div>
+   <select id="setupStatusFilter">
+    <option value="All">All statuses</option>
+    <option>Ready</option><option>Watch</option><option>Not Ready</option><option>Invalidated</option>
+   </select>
+  </div>
+  <div id="setupCards" class="grid3"></div>
+ </article>
+
+ <article class="panel gold">
+  <div class="heading">
+   <div><h3>Selected setup breakdown</h3><p>Macro context and technical state remain visible separately.</p></div>
+   <select id="setupDetailSelect"></select>
+  </div>
+  <div id="setupDetail"></div>
  </article>
 </section>
 
@@ -330,7 +398,7 @@ footer{text-align:center;color:#7d92aa;padding:18px}
 </div>
 
 <script>
-let cotData=null, newsData=[], newsMeta={}, providerData={}, calendarData={configured:false,events:[]}, macroData={}, marketsData={}, briefData={};
+let cotData=null, newsData=[], newsMeta={}, providerData={}, calendarData={configured:false,events:[]}, macroData={}, marketsData={}, briefData={}, setupData=[];
 let activeHorizon="Daily";
 const months=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 const currencyMarkets=["USD","EUR","GBP","JPY","CHF","CAD","AUD","NZD"];
@@ -815,15 +883,136 @@ function renderPairDetail(){
  document.getElementById("pairDetail").innerHTML=`<div class="grid3"><div class="metric"><span>Pair difference</span><strong>${row.gap}</strong><small>${horizon}</small></div><div class="metric"><span>Review direction</span><strong>Long ${row.base.market}</strong><small>Against ${row.quote.market}</small></div><div class="metric"><span>Trade status</span><strong>Not confirmed</strong><small>Wait for TradingView structure</small></div></div><div class="cols">${evidence("Stronger currency",row.base)}${evidence("Weaker currency",row.quote)}</div><div class="interpretation neutral"><h4>Why this pair?</h4><p>${row.base.market} currently has a higher evidence score than ${row.quote.market} by ${row.gap} points. The ranking is a shortlist for chart review, not an instruction to enter.</p><p>Trade confirmation still requires your HTF → MTF → LTF structure alignment.</p></div>`;
 }
 
+
+function setupStatusClass(status){
+ return status==="Ready"?"ready":status==="Watch"?"watch":status==="Invalidated"?"invalidated":"not-ready";
+}
+function macroPairContext(pair,horizon="Weekly"){
+ const row=pairRankings(horizon).find(item=>item.pair===pair);
+ if(!row)return null;
+ return {
+  gap:row.gap,
+  baseScore:row.base.score,
+  quoteScore:row.quote.score,
+  baseBias:row.base.bias,
+  quoteBias:row.quote.bias,
+  suggestedDirection:"Long",
+ };
+}
+function renderSetups(){
+ const filter=document.getElementById("setupStatusFilter").value;
+ const visible=setupData.filter(row=>filter==="All"||row.status===filter);
+ const counts={Ready:0,Watch:0,"Not Ready":0,Invalidated:0};
+ setupData.forEach(row=>counts[row.status]=(counts[row.status]||0)+1);
+ document.getElementById("setupReadyCount").textContent=counts.Ready||0;
+ document.getElementById("setupWatchCount").textContent=counts.Watch||0;
+ document.getElementById("setupNotReadyCount").textContent=counts["Not Ready"]||0;
+ document.getElementById("setupInvalidCount").textContent=counts.Invalidated||0;
+
+ document.getElementById("setupCards").innerHTML=visible.map(row=>{
+  const macro=macroPairContext(row.pair);
+  const combined=macro?Math.round((macro.gap*0.4)+(row.technical_score*0.6)):Math.round(row.technical_score*0.6);
+  return `<article class="outlook-card">
+   <div class="news-top">
+    <div><h4>${row.pair} — ${row.direction}</h4><p>Updated ${row.updated_at?new Date(row.updated_at).toLocaleString("en-GB"):"—"}</p></div>
+    <span class="setup-status ${setupStatusClass(row.status)}">${row.status}</span>
+   </div>
+   <div class="score">${combined}/100</div>
+   <p>Technical ${row.technical_score}/100${macro?` • Macro difference ${macro.gap}`:" • Pair not currently ranked"}</p>
+   <div class="check-grid">
+    ${Object.entries(row.checks||{}).map(([label,value])=>`<div class="check-item ${value?"yes":"no"}">${value?"✓":"○"}<br>${label}</div>`).join("")}
+   </div>
+   <div class="controls" style="margin-top:12px">
+    <button onclick="editSetup('${row.pair}')">Edit</button>
+    <button onclick="deleteSetup('${row.pair}')">Delete</button>
+   </div>
+  </article>`;
+ }).join("")||'<div class="message">No setups match this filter.</div>';
+
+ const select=document.getElementById("setupDetailSelect");
+ const previous=select.value;
+ select.innerHTML=setupData.map(row=>`<option value="${row.pair}">${row.pair} — ${row.status}</option>`).join("");
+ if(setupData.some(row=>row.pair===previous))select.value=previous;
+ renderSetupDetail();
+}
+function renderSetupDetail(){
+ const pair=document.getElementById("setupDetailSelect").value;
+ const row=setupData.find(item=>item.pair===pair);
+ if(!row){document.getElementById("setupDetail").innerHTML='<div class="message">No setup selected.</div>';return}
+ const macro=macroPairContext(pair);
+ const combined=macro?Math.round((macro.gap*0.4)+(row.technical_score*0.6)):Math.round(row.technical_score*0.6);
+ const waiting=(row.waiting_for||[]).map(x=>`<span class="chip">${x}</span>`).join("");
+ document.getElementById("setupDetail").innerHTML=`
+  <div class="grid4">
+   <article class="metric"><span>Status</span><strong>${row.status}</strong><small>${row.direction} ${row.pair}</small></article>
+   <article class="metric"><span>Technical</span><strong>${row.technical_score}/100</strong><small>Structure checklist</small></article>
+   <article class="metric"><span>Macro difference</span><strong>${macro?.gap??"—"}</strong><small>Weekly pair ranking</small></article>
+   <article class="metric"><span>Combined alignment</span><strong>${combined}/100</strong><small>40% macro / 60% technical</small></article>
+  </div>
+  <div class="cols">
+   <div class="interpretation ${row.status==="Ready"?"bullish":row.status==="Invalidated"?"bearish":"neutral"}">
+    <h4>${row.status}</h4>
+    <p>${row.status==="Ready"?"Every recorded technical requirement is complete. Review risk, event timing and the actual chart before execution.":row.status==="Invalidated"?"The setup has been manually invalidated and should not be traded.":"The setup is not fully confirmed."}</p>
+    <p><strong>Waiting for:</strong></p><div class="chips">${waiting||'<span class="chip">Nothing</span>'}</div>
+   </div>
+   <div class="interpretation neutral">
+    <h4>Macro context</h4>
+    <p>${macro?`${pair} has a ${macro.gap}-point weekly evidence difference. ${macro.baseBias} versus ${macro.quoteBias}.`:"This pair is not in the current weekly macro rankings."}</p>
+    <p><strong>Notes:</strong> ${row.notes||"None"}</p>
+   </div>
+  </div>`;
+}
+function editSetup(pair){
+ const row=setupData.find(item=>item.pair===pair);if(!row)return;
+ document.getElementById("setupPair").value=row.pair;
+ document.getElementById("setupDirection").value=row.direction;
+ document.getElementById("setupHtf").value=row.htf_direction;
+ document.getElementById("setupMtf").checked=row.mtf_choch;
+ document.getElementById("setupLtf").checked=row.ltf_choch;
+ document.getElementById("setupBos").checked=row.bos_confirmed;
+ document.getElementById("setupPullback").checked=row.pullback_ready;
+ document.getElementById("setupInvalidated").checked=row.invalidated;
+ document.getElementById("setupNotes").value=row.notes||"";
+}
+async function saveSetup(){
+ const payload={
+  pair:document.getElementById("setupPair").value,
+  direction:document.getElementById("setupDirection").value,
+  htf_direction:document.getElementById("setupHtf").value,
+  mtf_choch:document.getElementById("setupMtf").checked,
+  ltf_choch:document.getElementById("setupLtf").checked,
+  bos_confirmed:document.getElementById("setupBos").checked,
+  pullback_ready:document.getElementById("setupPullback").checked,
+  invalidated:document.getElementById("setupInvalidated").checked,
+  notes:document.getElementById("setupNotes").value,
+ };
+ const response=await fetch("/api/setups",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});
+ if(!response.ok){const error=await response.json();alert(error.detail||"Could not save setup.");return}
+ setupData=(await (await fetch("/api/setups")).json()).setups||[];
+ renderSetups();
+}
+async function deleteSetup(pair){
+ await fetch(`/api/setups/${encodeURIComponent(pair)}`,{method:"DELETE"});
+ setupData=(await (await fetch("/api/setups")).json()).setups||[];
+ renderSetups();
+}
+function loadTopPair(){
+ const top=pairRankings("Weekly")[0];
+ if(!top){alert("No pair ranking is available.");return}
+ document.getElementById("setupPair").value=top.pair;
+ document.getElementById("setupDirection").value="Long";
+ document.getElementById("setupNotes").value=`Weekly macro difference ${top.gap}. ${top.base.market} ${top.base.bias}; ${top.quote.market} ${top.quote.bias}.`;
+}
+
 async function loadAll(){
  try{
-  const [cotRes,newsRes,providersRes,calendarRes,macroRes,marketsRes,briefRes]=await Promise.all([fetch("/api/cot"),fetch("/api/news"),fetch("/api/providers"),fetch("/api/calendar"),fetch("/api/macro"),fetch("/api/markets"),fetch("/api/brief")]);
-  cotData=await cotRes.json();const newsPayload=await newsRes.json();newsMeta=newsPayload.data||newsPayload;newsData=newsMeta.items||[];providerData=await providersRes.json();calendarData=await calendarRes.json();macroData=await macroRes.json();marketsData=await marketsRes.json();briefData=await briefRes.json();
+  const [cotRes,newsRes,providersRes,calendarRes,macroRes,marketsRes,briefRes,setupsRes]=await Promise.all([fetch("/api/cot"),fetch("/api/news"),fetch("/api/providers"),fetch("/api/calendar"),fetch("/api/macro"),fetch("/api/markets"),fetch("/api/brief"),fetch("/api/setups")]);
+  cotData=await cotRes.json();const newsPayload=await newsRes.json();newsMeta=newsPayload.data||newsPayload;newsData=newsMeta.items||[];providerData=await providersRes.json();calendarData=await calendarRes.json();macroData=await macroRes.json();marketsData=await marketsRes.json();briefData=await briefRes.json();setupData=(await setupsRes.json()).setups||[];
   document.getElementById("status").textContent="Live CFTC + BBC";document.getElementById("status").className="status live";
   document.getElementById("refreshTime").textContent="Last COT refresh: "+(cotData.last_refresh?.time?new Date(cotData.last_refresh.time).toLocaleString("en-GB"):"—");
   populateSelect("overviewMarket",currencyMarkets);populateSelect("cotMarket",currencyMarkets);populateSelect("metalSelect",metalMarkets);populateSelect("outlookMarket",[...currencyMarkets,...metalMarkets]);populateSelect("currencyIntelSelect",currencyMarkets);
   const nm=document.getElementById("newsMarket");nm.innerHTML='<option value="All">All</option>'+[...currencyMarkets,...metalMarkets,"GLOBAL"].map(x=>`<option>${x}</option>`).join("");populateNewsFilters();
-  renderRanking();renderInterpretations();renderCotChart();renderMetals();renderNews();renderCalendar();renderProviders();renderMarkets();renderFred();renderBrief();renderOutlook();renderCurrencyIntelligence();renderPairRankings();
+  renderRanking();renderInterpretations();renderCotChart();renderMetals();renderNews();renderCalendar();renderProviders();renderMarkets();renderFred();renderBrief();renderOutlook();renderCurrencyIntelligence();renderPairRankings();renderSetups();
  }catch(error){document.getElementById("status").textContent="Load error";document.getElementById("status").className="status error";console.error(error)}
 }
 document.getElementById("overviewMarket").addEventListener("change",renderInterpretations);
@@ -845,6 +1034,10 @@ document.getElementById("currencyHorizon").addEventListener("change",renderCurre
 document.getElementById("pairHorizon").addEventListener("change",renderPairRankings);
 document.getElementById("pairCount").addEventListener("change",renderPairRankings);
 document.getElementById("pairDetailSelect").addEventListener("change",renderPairDetail);
+document.getElementById("saveSetup").addEventListener("click",saveSetup);
+document.getElementById("loadTopPair").addEventListener("click",loadTopPair);
+document.getElementById("setupStatusFilter").addEventListener("change",renderSetups);
+document.getElementById("setupDetailSelect").addEventListener("change",renderSetupDetail);
 loadSeasonality();loadAll();
 </script>
 </body>
