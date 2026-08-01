@@ -3,144 +3,41 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Institutional Forex Terminal</title>
+<title>Institutional Market Intelligence Terminal V6</title>
 <style>
 *{box-sizing:border-box}
 :root{
- --bg:#050d17;--sidebar:#071421;--panel:#0d2034;--panel2:#132d49;--panel3:#173957;
+ --bg:#050d17;--sidebar:#071421;--panel:#0d2034;--panel2:#132d49;
  --line:#2d5579;--text:#f7fbff;--muted:#9fb3ca;--blue:#318fff;--cyan:#27d3e4;
  --green:#28d18b;--red:#f25f6c;--gold:#f5bd4e;--purple:#9d76ff;--orange:#ff8d4d
 }
-body{
- margin:0;font-family:Segoe UI,Arial,sans-serif;color:var(--text);
- background:
- radial-gradient(circle at 5% 0%,rgba(49,143,255,.16),transparent 25%),
- radial-gradient(circle at 100% 0%,rgba(157,118,255,.12),transparent 22%),
- var(--bg)
-}
-.app{display:grid;grid-template-columns:245px 1fr;min-height:100vh}
-.sidebar{
- background:linear-gradient(180deg,#091a2b,#050d17);
- border-right:1px solid #294863;padding:20px 15px;position:sticky;top:0;height:100vh
-}
-.brand{padding:8px 10px 22px}
-.brand small{display:block;color:#84d9ff;font-weight:800;letter-spacing:.14em;font-size:.72rem}
-.brand h1{font-size:1.28rem;margin:8px 0 0}
-.brand p{color:#7f95ad;font-size:.82rem;margin:6px 0 0}
-nav{display:grid;gap:7px}
-.nav{
- width:100%;text-align:left;border:1px solid transparent;border-radius:10px;
- background:transparent;color:#c4d2e1;padding:12px 13px;font-weight:750;cursor:pointer
-}
-.nav:hover,.nav.active{background:#163552;border-color:#406b94;color:white}
-.version{
- margin-top:18px;padding:11px;border:1px solid #2a4a69;border-radius:10px;
- color:#8ca4bb;font-size:.8rem;background:#0a1b2c
-}
-.content{padding:22px;min-width:0}
-.page{display:none}.page.active{display:block}
-.hero{
- padding:24px 26px;margin-bottom:16px;border:1px solid #527dac;border-radius:18px;
- background:linear-gradient(120deg,#143e68,#111f39 60%,#38255d);
- box-shadow:0 14px 30px rgba(0,0,0,.22)
-}
-.hero .kicker{font-size:.76rem;letter-spacing:.15em;color:#88dcff;font-weight:800}
-.hero h2{font-size:2rem;margin:5px 0}.hero p{margin:0;color:#d0dbea}
-.statusbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:0 0 16px}
-.status,button,select{
- padding:10px 13px;border:1px solid #4c749b;border-radius:9px;
- background:#153451;color:white;font-weight:700
-}
-.status.live{border-color:var(--green)}.status.error{border-color:var(--red)}
-button{cursor:pointer}
-.grid4{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:16px}
-.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:16px}
-.metric,.panel{
- border:1px solid var(--line);border-radius:16px;
- background:linear-gradient(180deg,var(--panel2),var(--panel));
- box-shadow:0 9px 22px rgba(0,0,0,.16)
-}
-.metric{padding:18px;position:relative;overflow:hidden}
-.metric:before{content:"";position:absolute;inset:0 auto 0 0;width:5px;background:var(--blue)}
-.metric.green:before{background:var(--green)}.metric.red:before{background:var(--red)}
-.metric.gold:before{background:var(--gold)}.metric.purple:before{background:var(--purple)}
-.metric span,.metric small{display:block;color:var(--muted)}
-.metric strong{display:block;font-size:1.65rem;margin:9px 0 5px}
-.cols{display:grid;grid-template-columns:1fr 1fr;gap:16px}
-.panel{padding:19px;margin-bottom:16px}
-.panel.blue{border-top:5px solid var(--blue)}.panel.purple{border-top:5px solid var(--purple)}
-.panel.cyan{border-top:5px solid var(--cyan)}.panel.gold{border-top:5px solid var(--gold)}
-.panel.red{border-top:5px solid var(--red)}.panel.green{border-top:5px solid var(--green)}
-.heading{display:flex;justify-content:space-between;gap:14px;align-items:center;margin-bottom:15px}
-.heading h3{margin:0;font-size:1.3rem}.heading p{margin:4px 0 0;color:var(--muted)}
-.rank-list{display:grid;gap:10px}
-.rank-row{display:grid;grid-template-columns:50px 1fr 66px;gap:12px;align-items:center}
-.rank-row strong{font-size:1.04rem}
-.track{height:14px;background:#1a3855;border:1px solid #3b6287;border-radius:999px;overflow:hidden}
-.fill{height:100%;border-radius:999px;background:linear-gradient(90deg,var(--blue),var(--cyan))}
-.fill.green{background:linear-gradient(90deg,#12875b,var(--green))}
-.fill.red{background:linear-gradient(90deg,#9e303a,var(--red))}
-.rank-score{text-align:right;font-weight:800}
-.opportunities{display:grid;gap:10px}
-.opp{
- display:grid;grid-template-columns:88px 1fr auto;gap:12px;align-items:center;
- padding:12px;border:1px solid #2e5275;border-radius:10px;background:#102b46
-}
-.opp strong{font-size:1.05rem}.conviction{font-weight:800;color:#65eab0}
-.flow-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
-.flow-card{padding:15px;border-radius:12px;border:1px solid #315474;background:#102a44}
-.flow-card strong{font-size:1.45rem;display:block;margin:7px 0}
-.pos{color:#62e8ad;font-weight:800}.neg{color:#ff8c95;font-weight:800}
-.score-card{
- padding:16px;border:1px solid #315474;border-radius:13px;background:#102a44;
- display:grid;gap:10px
-}
-.score-top{display:flex;justify-content:space-between;align-items:center}
-.score-top strong{font-size:1.3rem}.score-big{font-size:2rem;font-weight:900}
-.factor{display:grid;grid-template-columns:1fr auto;gap:10px;padding:7px 0;border-bottom:1px solid #23415d}
-.factor:last-child{border-bottom:0}
-.chart-wrap{height:300px;position:relative}
-svg{width:100%;height:100%;overflow:visible}
-.axis{stroke:#45637f;stroke-width:1}.gridline{stroke:#27445f;stroke-width:1}
-.line-commercial{fill:none;stroke:#28d18b;stroke-width:3}
-.line-noncommercial{fill:none;stroke:#f25f6c;stroke-width:3}
-.dot-commercial{fill:#28d18b}.dot-noncommercial{fill:#f25f6c}
-.chart-legend{display:flex;gap:18px;color:var(--muted);font-size:.9rem;margin-top:8px}
-.legend-key{display:flex;gap:7px;align-items:center}.swatch{width:12px;height:12px;border-radius:3px}
-.table-wrap{overflow:auto;border:1px solid var(--line);border-radius:13px}
-table{border-collapse:separate;border-spacing:0;width:100%;min-width:1500px;background:#0d2034}
-th,td{padding:11px 9px;border-right:1px solid #294863;border-bottom:1px solid #294863;text-align:right;white-space:nowrap}
-thead th{position:sticky;top:0;background:#173e68;z-index:2}
-th:first-child,td:first-child{position:sticky;left:0;background:#112b45;text-align:left;z-index:1}
-thead th:first-child{z-index:3;background:#173e68}
-.comm td:not(:first-child){background:rgba(40,209,139,.06)}
-.noncomm td:not(:first-child){background:rgba(242,95,108,.06)}
-.delta{display:block;font-size:.75rem;color:#90a5ba;margin-top:3px}
-.gap td{padding:0;height:7px;background:#07131f}
-.matrix{overflow:auto}.matrix table{min-width:850px}
-.matrix td,.matrix th{text-align:center}
-.matrix .strong{background:rgba(40,209,139,.18);color:#68edb3;font-weight:800}
-.matrix .weak{background:rgba(242,95,108,.18);color:#ff8c97;font-weight:800}
-.matrix .neutral{color:#9fb2c7}
-.placeholder-list{display:grid;gap:9px}
-.placeholder{
- display:grid;grid-template-columns:1fr auto;gap:12px;padding:13px;
- border:1px solid #2c4d6e;border-radius:10px;background:#102a44
-}
-.badge{font-size:.72rem;padding:5px 7px;border-radius:6px;background:#765b1d}
-.calendar{display:grid;gap:10px}
-.event{
- display:grid;grid-template-columns:70px 1fr auto;gap:12px;align-items:center;
- padding:13px;border-radius:10px;border:1px solid #2d4f70;background:#102a44
-}
-.impact{font-size:.72rem;padding:6px;border-radius:6px;text-align:center;font-weight:900}
-.high{background:#9f3541}.medium{background:#80611e}.low{background:#246446}
+body{margin:0;font-family:Segoe UI,Arial,sans-serif;color:var(--text);background:radial-gradient(circle at 5% 0%,rgba(49,143,255,.16),transparent 25%),var(--bg)}
+.app{display:grid;grid-template-columns:255px 1fr;min-height:100vh}
+.sidebar{background:linear-gradient(180deg,#091a2b,#050d17);border-right:1px solid #294863;padding:20px 15px;position:sticky;top:0;height:100vh;overflow:auto}
+.brand{padding:8px 10px 22px}.brand small{display:block;color:#84d9ff;font-weight:800;letter-spacing:.14em;font-size:.72rem}.brand h1{font-size:1.25rem;margin:8px 0 0}.brand p{color:#7f95ad;font-size:.82rem;margin:6px 0 0}
+nav{display:grid;gap:7px}.nav{width:100%;text-align:left;border:1px solid transparent;border-radius:10px;background:transparent;color:#c4d2e1;padding:11px 13px;font-weight:750;cursor:pointer}.nav:hover,.nav.active{background:#163552;border-color:#406b94;color:white}
+.version{margin-top:18px;padding:11px;border:1px solid #2a4a69;border-radius:10px;color:#8ca4bb;font-size:.8rem;background:#0a1b2c}
+.content{padding:22px;min-width:0}.page{display:none}.page.active{display:block}
+.hero{padding:24px 26px;margin-bottom:16px;border:1px solid #527dac;border-radius:18px;background:linear-gradient(120deg,#143e68,#111f39 60%,#38255d)}.hero .kicker{font-size:.76rem;letter-spacing:.15em;color:#88dcff;font-weight:800}.hero h2{font-size:2rem;margin:5px 0}.hero p{margin:0;color:#d0dbea}
+.statusbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:0 0 16px}.status,button,select,input,textarea{padding:10px 13px;border:1px solid #4c749b;border-radius:9px;background:#153451;color:white;font-weight:700}.status.live{border-color:var(--green)}.status.error{border-color:var(--red)}button{cursor:pointer}
+.grid4{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:16px}.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:16px}.cols{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.metric,.panel{border:1px solid var(--line);border-radius:16px;background:linear-gradient(180deg,var(--panel2),var(--panel));box-shadow:0 9px 22px rgba(0,0,0,.16)}
+.metric{padding:18px}.metric span,.metric small{display:block;color:var(--muted)}.metric strong{display:block;font-size:1.65rem;margin:9px 0 5px}
+.panel{padding:19px;margin-bottom:16px}.panel.blue{border-top:5px solid var(--blue)}.panel.green{border-top:5px solid var(--green)}.panel.red{border-top:5px solid var(--red)}.panel.gold{border-top:5px solid var(--gold)}.panel.purple{border-top:5px solid var(--purple)}.panel.cyan{border-top:5px solid var(--cyan)}
+.heading{display:flex;justify-content:space-between;gap:14px;align-items:center;margin-bottom:15px}.heading h3{margin:0;font-size:1.3rem}.heading p{margin:4px 0 0;color:var(--muted)}
+.controls{display:flex;gap:14px;flex-wrap:wrap;align-items:center}.toggle{display:flex;gap:7px;align-items:center;padding:8px 11px;border:1px solid #3b6287;border-radius:9px;background:#102942}.toggle input{width:auto;padding:0}
+.rank-list{display:grid;gap:10px}.rank-row{display:grid;grid-template-columns:58px 1fr 74px;gap:12px;align-items:center}.track{height:14px;background:#1a3855;border:1px solid #3b6287;border-radius:999px;overflow:hidden}.fill{height:100%;border-radius:999px;background:linear-gradient(90deg,var(--blue),var(--cyan))}.rank-score{text-align:right;font-weight:800}
+.interpretation{padding:16px;border-radius:12px;border-left:6px solid var(--blue);background:#102a44}.interpretation.bullish{border-left-color:var(--green)}.interpretation.bearish{border-left-color:var(--red)}.interpretation.neutral{border-left-color:var(--gold)}.interpretation h4{margin:0 0 8px}.interpretation p{margin:5px 0;color:#c5d4e4}
+.chart-wrap{height:330px;position:relative}svg{width:100%;height:100%;overflow:visible}.axis{stroke:#45637f}.gridline{stroke:#27445f}.line-commercial{fill:none;stroke:#28d18b;stroke-width:3}.line-noncommercial{fill:none;stroke:#f25f6c;stroke-width:3}.line-change-commercial{fill:none;stroke:#28d18b;stroke-width:2;stroke-dasharray:6 4}.line-change-noncommercial{fill:none;stroke:#f25f6c;stroke-width:2;stroke-dasharray:6 4}.dot-commercial{fill:#28d18b}.dot-noncommercial{fill:#f25f6c}
+.legend{display:flex;gap:18px;color:var(--muted);font-size:.9rem;margin-top:8px}.legend-key{display:flex;gap:7px;align-items:center}.swatch{width:12px;height:12px;border-radius:3px}
+.table-wrap{overflow:auto;border:1px solid var(--line);border-radius:13px}table{border-collapse:separate;border-spacing:0;width:100%;min-width:1450px;background:#0d2034}th,td{padding:11px 9px;border-right:1px solid #294863;border-bottom:1px solid #294863;text-align:right;white-space:nowrap}thead th{position:sticky;top:0;background:#173e68;z-index:2}th:first-child,td:first-child{position:sticky;left:0;background:#112b45;text-align:left;z-index:1}thead th:first-child{z-index:3;background:#173e68}.comm td:not(:first-child){background:rgba(40,209,139,.06)}.noncomm td:not(:first-child){background:rgba(242,95,108,.06)}.delta{display:block;font-size:.75rem;color:#90a5ba;margin-top:3px}.gap td{padding:0;height:7px;background:#07131f}
+.news-list,.calendar-list{display:grid;gap:10px}.news-item,.event{padding:14px;border:1px solid #2d4f70;border-radius:11px;background:#102a44}.news-top,.event-top{display:flex;justify-content:space-between;gap:12px;align-items:flex-start}.news-item h4,.event h4{margin:0 0 6px}.news-item p,.event p{margin:5px 0;color:var(--muted)}.chips{display:flex;gap:7px;flex-wrap:wrap;margin-top:9px}.chip{font-size:.72rem;padding:5px 7px;border-radius:6px;background:#1a3a59;color:#dbe9f6}.chip.high{background:#9f3541}.chip.medium{background:#80611e}.chip.low{background:#246446}
+.provider{display:flex;justify-content:space-between;gap:10px;padding:12px;border:1px solid #2d4f70;border-radius:10px;background:#102a44}.provider .on{color:#66eab1}.provider .off{color:#ff9aa2}
+.season-grid{overflow:auto}.season-table{min-width:1100px}.season-table input{width:72px;padding:7px;text-align:center}.season-cell.posbg{background:rgba(40,209,139,.18)}.season-cell.negbg{background:rgba(242,95,108,.18)}
+.outlook-tabs{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}.outlook-tab.active{border-color:var(--green);background:#17452f}.outlook-card{padding:16px;border:1px solid #315474;border-radius:12px;background:#102a44}.outlook-card h4{margin:0 0 8px}.score{font-size:2rem;font-weight:900}.evidence{display:grid;gap:7px;margin-top:12px}.evidence div{display:flex;justify-content:space-between;gap:10px;padding:7px 0;border-bottom:1px solid #23415d}
 .message{padding:24px;color:var(--muted);text-align:center}
 footer{text-align:center;color:#7d92aa;padding:18px}
-@media(max-width:1100px){
- .app{grid-template-columns:1fr}.sidebar{height:auto;position:static}
- nav{grid-template-columns:repeat(4,1fr)}.nav{text-align:center}.version{display:none}
-}
+@media(max-width:1100px){.app{grid-template-columns:1fr}.sidebar{height:auto;position:static}nav{grid-template-columns:repeat(4,1fr)}.nav{text-align:center}.version{display:none}}
 @media(max-width:800px){.grid4,.grid3{grid-template-columns:1fr 1fr}.cols{grid-template-columns:1fr}}
 @media(max-width:520px){.content{padding:12px}.grid4,.grid3{grid-template-columns:1fr}nav{grid-template-columns:1fr 1fr}}
 </style>
@@ -148,339 +45,333 @@ footer{text-align:center;color:#7d92aa;padding:18px}
 <body>
 <div class="app">
 <aside class="sidebar">
- <div class="brand"><small>INSTITUTIONAL</small><h1>Forex Terminal</h1><p>Macro, positioning and pair selection</p></div>
+ <div class="brand"><small>INSTITUTIONAL</small><h1>Market Intelligence</h1><p>COT, markets, metals, news and outlooks</p></div>
  <nav>
   <button class="nav active" data-page="overview">Overview</button>
-  <button class="nav" data-page="strength">Currency Strength</button>
-  <button class="nav" data-page="cot">COT Positioning</button>
-  <button class="nav" data-page="confluence">Confluence</button>
-  <button class="nav" data-page="macro">Bonds & Rates</button>
-  <button class="nav" data-page="calendar">News & Calendar</button>
+  <button class="nav" data-page="cot">COT Relationship</button>
+  <button class="nav" data-page="metals">Precious Metals</button>
+  <button class="nav" data-page="markets">Global Markets</button>
+  <button class="nav" data-page="news">News Intelligence</button>
+  <button class="nav" data-page="calendar">Economic Calendar</button>
+  <button class="nav" data-page="seasonality">Seasonality</button>
+  <button class="nav" data-page="outlooks">Outlooks</button>
+  <button class="nav" data-page="providers">Data Connections</button>
  </nav>
- <div class="version">Cloud Edition V5<br>Live CFTC backend retained</div>
+ <div class="version">Cloud Edition V6<br>Live CFTC + BBC feeds</div>
 </aside>
 
 <main class="content">
 <div class="statusbar">
  <span id="status" class="status">Connecting…</span>
- <span id="refreshTime" class="status">Last refresh: —</span>
+ <span id="refreshTime" class="status">Last COT refresh: —</span>
  <button id="refresh">Refresh CFTC</button>
- <select id="mode"><option value="full">Full contracts</option><option value="compact">Compact (K)</option></select>
+ <select id="numberMode"><option value="compact">Compact (K)</option><option value="full">Full contracts</option></select>
 </div>
 
 <section id="overview" class="page active">
- <div class="hero"><div class="kicker">INSTITUTIONAL FOREX TERMINAL</div><h2>Market Flow Overview</h2><p>Live CFTC positioning converted into rankings, pair opportunities and transparent confluence scores.</p></div>
+ <div class="hero"><div class="kicker">VERSION 6</div><h2>Institutional Market Intelligence Terminal</h2><p>Follow the relationship between Commercial and Non-commercial traders, then confirm it with metals, global markets, news, events and seasonality.</p></div>
  <div class="grid4">
-  <article class="metric green"><span>Strongest currency</span><strong id="bestCurrency">—</strong><small>Institutional flow ranking</small></article>
-  <article class="metric red"><span>Weakest currency</span><strong id="worstCurrency">—</strong><small>Institutional flow ranking</small></article>
-  <article class="metric purple"><span>Top pair opportunity</span><strong id="topPair">—</strong><small>Largest strength difference</small></article>
-  <article class="metric gold"><span>Live markets loaded</span><strong id="loadedCount">—</strong><small>Out of 8 currencies</small></article>
+  <article class="metric"><span>Strongest bullish relationship</span><strong id="bestMarket">—</strong><small>Commercial selling / Non-commercial buying</small></article>
+  <article class="metric"><span>Strongest bearish relationship</span><strong id="worstMarket">—</strong><small>Commercial buying / Non-commercial selling</small></article>
+  <article class="metric"><span>BBC stories loaded</span><strong id="newsCount">—</strong><small>Business, World and UK feeds</small></article>
+  <article class="metric"><span>Connected providers</span><strong id="providerCount">—</strong><small>Live data connections</small></article>
  </div>
  <div class="cols">
-  <article class="panel blue"><div class="heading"><div><h3>Institutional strength ranking</h3><p>Commercial accumulation plus inverse Non-commercial flow.</p></div></div><div id="overviewRanking" class="rank-list"></div></article>
-  <article class="panel purple"><div class="heading"><div><h3>Top pair opportunities</h3><p>Ranked by the strongest positioning divergence.</p></div></div><div id="opportunities" class="opportunities"></div></article>
+  <article class="panel green"><div class="heading"><div><h3>Institutional relationship ranking</h3><p>Positive means Commercial selling with Non-commercial buying.</p></div></div><div id="overviewRanking" class="rank-list"></div></article>
+  <article class="panel purple"><div class="heading"><div><h3>Current interpretation</h3><p>Relationship logic separated from trade timing.</p></div><select id="overviewMarket"></select></div><div id="overviewInterpretation"></div></article>
  </div>
  <div class="cols">
-  <article class="panel cyan"><div class="heading"><div><h3>Latest money flow</h3><p>Current ten-week Commercial and Non-commercial changes.</p></div></div><div id="flowCards" class="flow-grid"></div></article>
-  <article class="panel gold"><div class="heading"><div><h3>Selected currency trend</h3><p>Commercial and Non-commercial net positions.</p></div><select id="chartCurrency"></select></div><div id="chart" class="chart-wrap"></div><div class="chart-legend"><span class="legend-key"><i class="swatch" style="background:#28d18b"></i>Commercial</span><span class="legend-key"><i class="swatch" style="background:#f25f6c"></i>Non-commercial</span></div></article>
+  <article class="panel cyan"><div class="heading"><div><h3>Latest high-impact news</h3><p>BBC feed classification by affected market and country.</p></div></div><div id="overviewNews" class="news-list"></div></article>
+  <article class="panel gold"><div class="heading"><div><h3>Data coverage</h3><p>Live and pending provider status.</p></div></div><div id="overviewProviders"></div></article>
  </div>
-</section>
-
-<section id="strength" class="page">
- <div class="hero"><div class="kicker">CURRENCY STRENGTH ENGINE 2.0</div><h2>Relative Currency & Pair Rankings</h2><p>The current live score uses COT flow. Yield, policy-rate and macro factors are displayed separately until their live feeds are connected.</p></div>
- <div class="cols">
-  <article class="panel blue"><div class="heading"><div><h3>Full currency ranking</h3><p>Live score scaled from 0 to 100 across eight currencies.</p></div></div><div id="fullRanking" class="rank-list"></div></article>
-  <article class="panel red"><div class="heading"><div><h3>Pair opportunity matrix</h3><p>Green favours the row currency; red favours the column currency.</p></div></div><div class="matrix"><table id="pairMatrix"></table></div></article>
- </div>
- <article class="panel green"><div class="heading"><div><h3>Top pair shortlist</h3><p>Largest live COT-flow differences for chart review.</p></div></div><div id="strengthPairs" class="grid3"></div></article>
 </section>
 
 <section id="cot" class="page">
- <div class="hero"><div class="kicker">INSTITUTIONAL POSITIONING CENTRE</div><h2>10-Week COT Numbers</h2><p>Commercial and Non-commercial net positions only. Non-reportables remain excluded.</p></div>
+ <div class="hero"><div class="kicker">INSTITUTIONAL RELATIONSHIP ENGINE</div><h2>Commercial vs Non-commercial Behaviour</h2><p>The core relationship: Commercial selling plus Non-commercial buying supports a bullish trend; the reverse supports a bearish trend. Price confirmation remains necessary.</p></div>
+ <article class="panel blue">
+  <div class="heading"><div><h3>COT chart controls</h3><p>View either group individually or compare them.</p></div><select id="cotMarket"></select></div>
+  <div class="controls">
+   <label class="toggle"><input id="showCommercial" type="checkbox" checked> Commercials</label>
+   <label class="toggle"><input id="showNoncommercial" type="checkbox" checked> Non-commercials</label>
+   <label>Graph <select id="chartMode"><option value="net">Net position</option><option value="change">Weekly buying / selling</option></select></label>
+  </div>
+  <div id="cotChart" class="chart-wrap"></div>
+  <div class="legend"><span class="legend-key"><i class="swatch" style="background:#28d18b"></i>Commercial</span><span class="legend-key"><i class="swatch" style="background:#f25f6c"></i>Non-commercial</span></div>
+ </article>
  <div class="cols">
-  <article class="panel green"><div class="heading"><div><h3>Commercial accumulation</h3><p>Largest ten-week changes.</p></div></div><div id="commercialLeaders" class="rank-list"></div></article>
-  <article class="panel red"><div class="heading"><div><h3>Non-commercial movement</h3><p>Largest ten-week changes.</p></div></div><div id="noncommercialLeaders" class="rank-list"></div></article>
+  <article class="panel purple"><div class="heading"><div><h3>Relationship interpretation</h3><p>What the two groups are currently doing.</p></div></div><div id="cotInterpretation"></div></article>
+  <article class="panel green"><div class="heading"><div><h3>10-week behaviour</h3><p>Direction, duration and acceleration.</p></div></div><div id="behaviourMetrics" class="grid3"></div></article>
  </div>
- <article class="panel purple">
-  <div id="message" class="message">Loading the latest CFTC reports…</div>
-  <div class="table-wrap"><table><thead id="head"></thead><tbody id="body"></tbody></table></div>
+ <article class="panel red">
+  <div class="heading"><div><h3>10-week COT figures</h3><p>Commercial and Non-commercial rows can be hidden independently.</p></div></div>
+  <div class="table-wrap"><table><thead id="cotHead"></thead><tbody id="cotBody"></tbody></table></div>
  </article>
 </section>
 
-<section id="confluence" class="page">
- <div class="hero"><div class="kicker">PAIR CONFLUENCE FRAMEWORK</div><h2>Institutional Confluence Scores</h2><p>Version 5 scores live COT flow now and reserves clearly labelled components for future bond, rate, news and TradingView feeds.</p></div>
- <div class="grid3" id="confluenceCards"></div>
+<section id="metals" class="page">
+ <div class="hero"><div class="kicker">PRECIOUS METALS</div><h2>Gold, Silver, Platinum and Palladium</h2><p>Live COT relationship data is available now. Price, real-yield and USD confirmation activate when provider keys are connected.</p></div>
+ <div id="metalCards" class="grid4"></div>
+ <div class="cols">
+  <article class="panel gold"><div class="heading"><div><h3>Metal COT trend</h3><p>Commercial and Non-commercial positioning.</p></div><select id="metalSelect"></select></div><div id="metalChart" class="chart-wrap"></div></article>
+  <article class="panel purple"><div class="heading"><div><h3>Precious-metal interpretation</h3><p>Positioning relationship and missing confirmations.</p></div></div><div id="metalInterpretation"></div></article>
+ </div>
 </section>
 
-<section id="macro" class="page">
- <div class="hero"><div class="kicker">MACRO DATA CENTRE</div><h2>Bonds, Rates & Central Banks</h2><p>The interface is prepared for live official feeds. Values are not fabricated while those connections are still pending.</p></div>
- <div class="cols">
-  <article class="panel cyan"><div class="heading"><div><h3>Sovereign bond yields</h3><p>Planned live series</p></div></div><div class="placeholder-list"><div class="placeholder"><span>US 2Y / 5Y / 10Y / 30Y</span><span class="badge">CONNECT NEXT</span></div><div class="placeholder"><span>UK 2Y / 10Y</span><span class="badge">CONNECT NEXT</span></div><div class="placeholder"><span>Germany 2Y / 10Y</span><span class="badge">CONNECT NEXT</span></div><div class="placeholder"><span>Japan, Switzerland, Canada, Australia, New Zealand</span><span class="badge">CONNECT NEXT</span></div></div></article>
-  <article class="panel gold"><div class="heading"><div><h3>Central-bank policy</h3><p>Planned live feeds</p></div></div><div class="placeholder-list"><div class="placeholder"><span>Fed, ECB, BoE and BoJ rates</span><span class="badge">CONNECT NEXT</span></div><div class="placeholder"><span>SNB, BoC, RBA and RBNZ rates</span><span class="badge">CONNECT NEXT</span></div><div class="placeholder"><span>Policy-rate differentials</span><span class="badge">CONNECT NEXT</span></div><div class="placeholder"><span>Next meeting dates and policy bias</span><span class="badge">CONNECT NEXT</span></div></div></article>
+<section id="markets" class="page">
+ <div class="hero"><div class="kicker">GLOBAL STOCK MARKETS</div><h2>Major Equity Indices</h2><p>UK, New York, European and Asia-Pacific markets. Live quotes require the configured market-data provider.</p></div>
+ <div id="marketProviderMessage" class="message"></div>
+ <div id="globalMarketCards" class="grid4"></div>
+ <article class="panel cyan"><div class="heading"><div><h3>Planned index coverage</h3><p>Risk-on / risk-off inputs for currencies and metals.</p></div></div><div class="grid4">
+  <div class="outlook-card"><h4>United Kingdom</h4><p>FTSE 100, FTSE 250, FTSE All-Share</p></div>
+  <div class="outlook-card"><h4>United States</h4><p>S&P 500, Nasdaq 100, Dow, Russell 2000, VIX</p></div>
+  <div class="outlook-card"><h4>Europe</h4><p>Euro Stoxx 50, DAX, CAC 40, SMI, IBEX, FTSE MIB</p></div>
+  <div class="outlook-card"><h4>Asia-Pacific</h4><p>Nikkei, TOPIX, Hang Seng, CSI 300, KOSPI, Nifty, ASX 200</p></div>
+ </div></article>
+</section>
+
+<section id="news" class="page">
+ <div class="hero"><div class="kicker">NEWS INTELLIGENCE</div><h2>Multi-source News Feed</h2><p>BBC Business, World and UK are live. Additional licensed sources can be connected later without changing the interface.</p></div>
+ <div class="controls">
+  <label>Impact <select id="newsImpact"><option value="All">All</option><option>High</option><option>Medium</option><option>Low</option></select></label>
+  <label>Market <select id="newsMarket"><option value="All">All</option></select></label>
+  <button id="reloadNews">Refresh news</button>
  </div>
- <article class="panel blue"><div class="heading"><div><h3>Planned macro score weights</h3><p>These become active only when the underlying data feeds are live.</p></div></div><div class="grid4"><div class="score-card"><span>Bond-yield differential</span><strong class="score-big">15%</strong></div><div class="score-card"><span>Policy-rate differential</span><strong class="score-big">15%</strong></div><div class="score-card"><span>Central-bank bias</span><strong class="score-big">10%</strong></div><div class="score-card"><span>DXY / broad risk context</span><strong class="score-big">5%</strong></div></div></article>
+ <article class="panel purple"><div id="newsList" class="news-list"></div></article>
 </section>
 
 <section id="calendar" class="page">
- <div class="hero"><div class="kicker">NEWS & ECONOMIC CALENDAR</div><h2>Market-Moving Events</h2><p>The event interface is prepared; live calendar and news feeds are the next connection stage.</p></div>
- <div class="cols">
-  <article class="panel red"><div class="heading"><div><h3>High-impact event categories</h3><p>Only material events will be prioritised.</p></div></div><div class="calendar"><div class="event"><span class="impact high">HIGH</span><strong>Interest-rate decisions</strong><span>Fed / ECB / BoE / BoJ</span></div><div class="event"><span class="impact high">HIGH</span><strong>Employment</strong><span>NFP / labour reports</span></div><div class="event"><span class="impact high">HIGH</span><strong>Inflation</strong><span>CPI / PCE / wage data</span></div><div class="event"><span class="impact medium">MED</span><strong>GDP and surveys</strong><span>Growth and sentiment</span></div></div></article>
-  <article class="panel purple"><div class="heading"><div><h3>Planned alert logic</h3><p>Future automated notifications</p></div></div><div class="placeholder-list"><div class="placeholder"><span>High-impact event within 60 minutes</span><span class="badge">PLANNED</span></div><div class="placeholder"><span>COT update published</span><span class="badge">PLANNED</span></div><div class="placeholder"><span>Top pair score crosses threshold</span><span class="badge">PLANNED</span></div><div class="placeholder"><span>TradingView structure aligns</span><span class="badge">PLANNED</span></div></div></article>
- </div>
+ <div class="hero"><div class="kicker">ECONOMIC CALENDAR</div><h2>Dated Events, Countries and Market Effects</h2><p>Events show date, impact, country, actual, forecast, previous, source and expected affected markets.</p></div>
+ <div id="calendarMessage" class="message"></div>
+ <article class="panel red"><div id="calendarList" class="calendar-list"></div></article>
 </section>
 
-<footer>Live source: CFTC Legacy Futures Only. V5 does not invent macro data: unconnected feeds are clearly marked as pending.</footer>
+<section id="seasonality" class="page">
+ <div class="hero"><div class="kicker">SEASONALITY ENGINE</div><h2>Editable Seasonal Heatmap</h2><p>Enter your own monthly percentage tendencies from your chosen source. Data is saved in this browser and can be replaced as your research develops.</p></div>
+ <div class="controls">
+  <button id="addSeasonMarket">Add market</button>
+  <button id="saveSeasonality">Save in browser</button>
+  <button id="resetSeasonality">Reset</button>
+ </div>
+ <article class="panel gold"><div class="season-grid"><table class="season-table"><thead id="seasonHead"></thead><tbody id="seasonBody"></tbody></table></div></article>
+</section>
+
+<section id="outlooks" class="page">
+ <div class="hero"><div class="kicker">MULTI-HORIZON OUTLOOK ENGINE</div><h2>Daily to Yearly Market Outlooks</h2><p>Scores use only available evidence. Missing price, bond, calendar or seasonality inputs reduce confidence rather than being invented.</p></div>
+ <div class="controls"><label>Market <select id="outlookMarket"></select></label></div>
+ <div class="outlook-tabs">
+  <button class="outlook-tab active" data-horizon="Daily">Daily</button>
+  <button class="outlook-tab" data-horizon="Weekly">Weekly</button>
+  <button class="outlook-tab" data-horizon="Monthly">Monthly</button>
+  <button class="outlook-tab" data-horizon="6-Month">6-Month</button>
+  <button class="outlook-tab" data-horizon="Yearly">Yearly</button>
+ </div>
+ <div id="outlookContent"></div>
+</section>
+
+<section id="providers" class="page">
+ <div class="hero"><div class="kicker">DATA CONNECTIONS</div><h2>Provider Status</h2><p>Live sources are shown clearly. Provider keys are stored privately in Render environment variables, never in the browser.</p></div>
+ <article class="panel blue"><div id="providerList"></div></article>
+ <article class="panel green"><h3>Render environment variables</h3><p>Add these only when you have the relevant accounts:</p><div class="provider"><span>FRED_API_KEY</span><span>US yields and macro series</span></div><div class="provider"><span>TRADING_ECONOMICS_API_KEY</span><span>Global indices, metal prices and economic calendar</span></div></article>
+</section>
+
+<footer>V6 uses live CFTC Legacy Futures Only and BBC feeds. Unconnected data is labelled pending; no market figures are fabricated.</footer>
 </main>
 </div>
 
 <script>
-let data=null;
-let ranking=[];
-const mode=document.getElementById("mode");
-const currencies=["USD","EUR","GBP","JPY","CHF","CAD","AUD","NZD"];
-const fmt=v=>v==null?"—":mode.value==="compact"?(v/1000).toFixed(1)+"K":Number(v).toLocaleString("en-GB");
-const cls=v=>Number(v)>=0?"pos":"neg";
+let cotData=null, newsData=[], providerData={}, calendarData={configured:false,events:[]}, macroData={}, marketsData={};
+let activeHorizon="Daily";
+const months=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+const currencyMarkets=["USD","EUR","GBP","JPY","CHF","CAD","AUD","NZD"];
+const metalMarkets=["GOLD","SILVER","PLATINUM","PALLADIUM"];
+const numberMode=document.getElementById("numberMode");
+const fmt=v=>v==null?"—":numberMode.value==="compact"?(v/1000).toFixed(1)+"K":Number(v).toLocaleString("en-GB");
 
-document.querySelectorAll(".nav").forEach(button=>{
- button.addEventListener("click",()=>{
-  document.querySelectorAll(".nav").forEach(item=>item.classList.remove("active"));
-  document.querySelectorAll(".page").forEach(page=>page.classList.remove("active"));
-  button.classList.add("active");
-  document.getElementById(button.dataset.page).classList.add("active");
- });
-});
+document.querySelectorAll(".nav").forEach(button=>button.addEventListener("click",()=>{
+ document.querySelectorAll(".nav").forEach(item=>item.classList.remove("active"));
+ document.querySelectorAll(".page").forEach(page=>page.classList.remove("active"));
+ button.classList.add("active");document.getElementById(button.dataset.page).classList.add("active");
+}));
 
-function reportDates(){
- const values=new Set();
- Object.values(data.currencies).forEach(rows=>rows.forEach(row=>values.add(row.report_date)));
- return [...values].sort().slice(-10);
+function allCotMarkets(){return {...(cotData?.currencies||{}),...(cotData?.metals||{})}}
+function changes(rows){
+ if(!rows?.length)return {commercial:0,noncommercial:0,relation:0};
+ const first=rows[0],last=rows.at(-1);
+ const commercial=last.commercial_net-first.commercial_net;
+ const noncommercial=last.noncommercial_net-first.noncommercial_net;
+ // Core user relationship: Commercial selling (-) + Non-commercial buying (+) = bullish.
+ return {commercial,noncommercial,relation:noncommercial-commercial};
 }
-
-function currencyStats(){
- return Object.entries(data.currencies)
-  .filter(([,rows])=>rows.length)
-  .map(([currency,rows])=>{
-   const latest=rows.at(-1),oldest=rows[0];
-   const commercialChange=latest.commercial_net-oldest.commercial_net;
-   const noncommercialChange=latest.noncommercial_net-oldest.noncommercial_net;
-   const rawFlow=commercialChange-noncommercialChange;
-   return {currency,rows,latest,commercialChange,noncommercialChange,rawFlow};
+function relationship(market){
+ const rows=allCotMarkets()[market]||[];
+ const c=changes(rows);
+ const bullish=c.commercial<0&&c.noncommercial>0;
+ const bearish=c.commercial>0&&c.noncommercial<0;
+ let bias="Mixed",className="neutral",explanation="The two groups are not showing the clean opposing relationship.";
+ if(bullish){bias="Bullish relationship";className="bullish";explanation="Commercials are selling while Non-commercials are buying. This is consistent with speculative participation in an uptrend."}
+ if(bearish){bias="Bearish relationship";className="bearish";explanation="Commercials are buying while Non-commercials are selling. This is consistent with speculative participation in a downtrend."}
+ const strength=Math.min(100,Math.round((Math.abs(c.commercial)+Math.abs(c.noncommercial))/Math.max(1,rows.at(-1)?.open_interest||1)*500));
+ return {...c,bias,className,explanation,strength};
+}
+function populateSelect(id,markets){
+ const select=document.getElementById(id);select.innerHTML=markets.map(m=>`<option value="${m}">${m}</option>`).join("");
+}
+function ranking(){
+ return currencyMarkets.map(m=>({market:m,...relationship(m)})).sort((a,b)=>b.relation-a.relation);
+}
+function renderRanking(){
+ const list=ranking(),max=Math.max(...list.map(x=>Math.abs(x.relation)),1);
+ const target=document.getElementById("overviewRanking");target.innerHTML="";
+ list.forEach(item=>target.insertAdjacentHTML("beforeend",`<div class="rank-row"><strong>${item.market}</strong><div class="track"><div class="fill" style="width:${Math.max(5,Math.abs(item.relation)/max*100)}%"></div></div><span class="rank-score">${fmt(item.relation)}</span></div>`));
+ document.getElementById("bestMarket").textContent=list[0]?.market||"—";
+ document.getElementById("worstMarket").textContent=list.at(-1)?.market||"—";
+}
+function interpretationHTML(market){
+ const r=relationship(market);
+ return `<div class="interpretation ${r.className}"><h4>${market}: ${r.bias}</h4><p>${r.explanation}</p><p><strong>Commercial 10W:</strong> ${r.commercial>=0?"Buying":"Selling"} ${fmt(Math.abs(r.commercial))}</p><p><strong>Non-commercial 10W:</strong> ${r.noncommercial>=0?"Buying":"Selling"} ${fmt(Math.abs(r.noncommercial))}</p><p><strong>Relationship strength:</strong> ${r.strength}/100</p><p><strong>Use:</strong> Follow this as directional context, then require price and TradingView structure confirmation before entry.</p></div>`;
+}
+function renderInterpretations(){
+ const overview=document.getElementById("overviewMarket").value;
+ const cot=document.getElementById("cotMarket").value;
+ document.getElementById("overviewInterpretation").innerHTML=interpretationHTML(overview);
+ document.getElementById("cotInterpretation").innerHTML=interpretationHTML(cot);
+ const r=relationship(cot),rows=allCotMarkets()[cot]||[];
+ const consecutive=(field,positive)=>{
+  let count=0;
+  for(let i=rows.length-1;i>0;i--){const d=rows[i][field]-rows[i-1][field];if((positive&&d>0)||(!positive&&d<0))count++;else break}
+  return count;
+ };
+ document.getElementById("behaviourMetrics").innerHTML=[
+  ["Commercial direction",r.commercial>=0?"Buying":"Selling"],
+  ["Non-commercial direction",r.noncommercial>=0?"Buying":"Selling"],
+  ["Relationship",r.bias],
+ ].map(([a,b])=>`<div class="metric"><span>${a}</span><strong>${b}</strong></div>`).join("");
+}
+function drawChart(targetId,market,mode="net",showC=true,showN=true){
+ const rows=allCotMarkets()[market]||[],target=document.getElementById(targetId);
+ if(!rows.length){target.innerHTML='<div class="message">No COT data available.</div>';return}
+ const width=760,height=290,pad=42;
+ const cVals=rows.map((r,i)=>mode==="net"?r.commercial_net:(i?r.commercial_net-rows[i-1].commercial_net:0));
+ const nVals=rows.map((r,i)=>mode==="net"?r.noncommercial_net:(i?r.noncommercial_net-rows[i-1].noncommercial_net:0));
+ const values=[...(showC?cVals:[]),...(showN?nVals:[])];const min=Math.min(...values,0),max=Math.max(...values,0);
+ const x=i=>pad+i*(width-pad*2)/Math.max(1,rows.length-1);const y=v=>height-pad-(v-min)/(max-min||1)*(height-pad*2);
+ const poly=(vals,klass,dotClass)=>`<polyline class="${klass}" points="${vals.map((v,i)=>`${x(i)},${y(v)}`).join(" ")}"/>${vals.map((v,i)=>`<circle class="${dotClass}" cx="${x(i)}" cy="${y(v)}" r="3"/>`).join("")}`;
+ let grid="";for(let i=0;i<5;i++){const gy=pad+i*(height-pad*2)/4;grid+=`<line class="gridline" x1="${pad}" y1="${gy}" x2="${width-pad}" y2="${gy}"/>`}
+ const zero=y(0);const labels=rows.map((r,i)=>`<text x="${x(i)}" y="${height-8}" text-anchor="middle" fill="#8fa5bb" font-size="10">${r.report_date.slice(5)}</text>`).join("");
+ const cLine=showC?poly(cVals,mode==="net"?"line-commercial":"line-change-commercial","dot-commercial"):"";
+ const nLine=showN?poly(nVals,mode==="net"?"line-noncommercial":"line-change-noncommercial","dot-noncommercial"):"";
+ target.innerHTML=`<svg viewBox="0 0 ${width} ${height}">${grid}<line class="axis" x1="${pad}" y1="${zero}" x2="${width-pad}" y2="${zero}"/>${cLine}${nLine}${labels}</svg>`;
+}
+function renderCotChart(){
+ drawChart("cotChart",document.getElementById("cotMarket").value,document.getElementById("chartMode").value,document.getElementById("showCommercial").checked,document.getElementById("showNoncommercial").checked);
+ renderInterpretations();renderCotTable();
+}
+function renderCotTable(){
+ const showC=document.getElementById("showCommercial").checked,showN=document.getElementById("showNoncommercial").checked;
+ const all=allCotMarkets(),dates=[...new Set(Object.values(all).flatMap(rows=>rows.map(r=>r.report_date)))].sort().slice(-10);
+ document.getElementById("cotHead").innerHTML="<tr><th>Market / Group</th>"+dates.map(d=>`<th>${d}</th>`).join("")+"<th>10W change</th></tr>";
+ const body=document.getElementById("cotBody");body.innerHTML="";
+ currencyMarkets.forEach((market,index)=>{
+  const rows=all[market]||[],map=Object.fromEntries(rows.map(r=>[r.report_date,r]));
+  [["commercial_net","Commercial","comm",showC],["noncommercial_net","Non-commercial","noncomm",showN]].forEach(([field,label,rowClass,show])=>{
+   if(!show)return;let html=`<td><strong>${market}</strong><span class="delta">${label}</span></td>`;
+   dates.forEach((d,i)=>{const v=map[d]?.[field],p=i?map[dates[i-1]]?.[field]:null,delta=v!=null&&p!=null?v-p:null;html+=`<td>${fmt(v)}${delta==null?"":`<span class="delta">Δ ${fmt(delta)}</span>`}</td>`});
+   const vals=dates.map(d=>map[d]?.[field]).filter(v=>v!=null);html+=`<td>${vals.length>1?fmt(vals.at(-1)-vals[0]):"—"}</td>`;
+   const tr=document.createElement("tr");tr.className=rowClass;tr.innerHTML=html;body.appendChild(tr);
   });
-}
-
-function buildRanking(){
- const stats=currencyStats();
- const values=stats.map(item=>item.rawFlow);
- const min=Math.min(...values),max=Math.max(...values);
- ranking=stats.map(item=>({
-  ...item,
-  score:max===min?50:Math.round((item.rawFlow-min)/(max-min)*100)
- })).sort((a,b)=>b.score-a.score);
-}
-
-function renderRank(targetId, items=ranking, valueField="score", compact=false){
- const target=document.getElementById(targetId);
- target.innerHTML="";
- const vals=items.map(item=>Math.abs(item[valueField]));
- const max=Math.max(...vals,1);
- items.forEach(item=>{
-  const value=item[valueField];
-  const width=valueField==="score"?Math.max(5,value):Math.max(5,Math.abs(value)/max*100);
-  target.insertAdjacentHTML("beforeend",
-   `<div class="rank-row"><strong>${item.currency}</strong><div class="track"><div class="fill ${value<0?"red":"green"}" style="width:${width}%"></div></div><span class="rank-score">${compact?fmt(value):value}</span></div>`
-  );
+  if(index<currencyMarkets.length-1){const gap=document.createElement("tr");gap.className="gap";gap.innerHTML=`<td colspan="${dates.length+2}"></td>`;body.appendChild(gap)}
  });
 }
-
-function pairList(){
- const strongest=ranking.slice(0,4),weakest=[...ranking].slice(-4).reverse();
- const pairs=[];
- strongest.forEach(strong=>weakest.forEach(weak=>{
-  if(strong.currency!==weak.currency){
-   pairs.push({
-    pair:strong.currency+"/"+weak.currency,
-    strong:strong.currency,weak:weak.currency,
-    gap:strong.score-weak.score,
-    cotScore:Math.round((strong.score+(100-weak.score))/2)
-   });
-  }
- }));
- return pairs.sort((a,b)=>b.gap-a.gap);
+function renderMetals(){
+ const cards=document.getElementById("metalCards");cards.innerHTML="";
+ metalMarkets.forEach(m=>{const r=relationship(m);cards.insertAdjacentHTML("beforeend",`<article class="metric"><span>${m}</span><strong>${r.bias}</strong><small>Relationship ${r.strength}/100</small></article>`)});
+ const m=document.getElementById("metalSelect").value;drawChart("metalChart",m,"net",true,true);
+ document.getElementById("metalInterpretation").innerHTML=interpretationHTML(m)+`<div class="interpretation neutral" style="margin-top:12px"><h4>Missing confirmations</h4><p>Live metal price, USD, real-yield and global-risk inputs activate after market-data and FRED keys are connected.</p></div>`;
 }
-
-function renderOpportunities(){
- const target=document.getElementById("opportunities");
- target.innerHTML="";
- const pairs=pairList().slice(0,6);
- pairs.forEach(item=>{
-  target.insertAdjacentHTML("beforeend",
-   `<div class="opp"><strong>${item.pair}</strong><div class="track"><div class="fill" style="width:${Math.max(8,item.gap)}%"></div></div><span class="conviction">${item.gap}</span></div>`
-  );
- });
- document.getElementById("topPair").textContent=pairs[0]?.pair||"—";
+function filterNews(){
+ const impact=document.getElementById("newsImpact").value,market=document.getElementById("newsMarket").value;
+ return newsData.filter(n=>(impact==="All"||n.impact===impact)&&(market==="All"||n.affected_markets.includes(market)));
 }
-
-function renderStrengthPairs(){
- const target=document.getElementById("strengthPairs");
- target.innerHTML="";
- pairList().slice(0,6).forEach((item,index)=>{
-  target.insertAdjacentHTML("beforeend",
-   `<div class="score-card"><div class="score-top"><strong>#${index+1} ${item.pair}</strong><span class="score-big">${item.gap}</span></div><div class="track"><div class="fill" style="width:${item.gap}%"></div></div><small>Live COT-flow difference</small></div>`
-  );
- });
+function newsHTML(item){
+ const time=item.published?new Date(item.published).toLocaleString("en-GB"):"";
+ return `<article class="news-item"><div class="news-top"><div><h4>${item.title}</h4><p>${item.source} • ${time}</p></div><span class="chip ${item.impact.toLowerCase()}">${item.impact}</span></div><p>${item.summary||""}</p><div class="chips">${item.countries.map(x=>`<span class="chip">${x}</span>`).join("")}${item.affected_markets.map(x=>`<span class="chip">${x}</span>`).join("")}${item.effects.map(x=>`<span class="chip">${x}</span>`).join("")}</div></article>`;
 }
-
-function renderFlowCards(){
- const target=document.getElementById("flowCards");
- target.innerHTML="";
- ranking.slice(0,4).forEach(item=>{
-  target.insertAdjacentHTML("beforeend",
-   `<div class="flow-card"><span>${item.currency}</span><strong class="${cls(item.rawFlow)}">${fmt(item.rawFlow)}</strong><small>Commercial 10W ${fmt(item.commercialChange)}<br>Non-commercial 10W ${fmt(item.noncommercialChange)}</small></div>`
-  );
- });
+function renderNews(){
+ document.getElementById("newsList").innerHTML=filterNews().map(newsHTML).join("")||'<div class="message">No matching stories.</div>';
+ const high=newsData.filter(n=>n.impact==="High").slice(0,4);document.getElementById("overviewNews").innerHTML=high.map(newsHTML).join("")||'<div class="message">No high-impact BBC stories currently classified.</div>';
+ document.getElementById("newsCount").textContent=newsData.length;
 }
-
-function renderConfluence(){
- const target=document.getElementById("confluenceCards");
- target.innerHTML="";
- pairList().slice(0,9).forEach(item=>{
-  const currentScore=Math.round(item.cotScore*0.45);
-  target.insertAdjacentHTML("beforeend",
-   `<div class="score-card">
-    <div class="score-top"><strong>${item.pair}</strong><span class="score-big">${currentScore}/45</span></div>
-    <div class="factor"><span>Live COT positioning</span><strong>${currentScore}/45</strong></div>
-    <div class="factor"><span>Bond-yield differential</span><span class="badge">Pending</span></div>
-    <div class="factor"><span>Policy-rate differential</span><span class="badge">Pending</span></div>
-    <div class="factor"><span>Central-bank bias</span><span class="badge">Pending</span></div>
-    <div class="factor"><span>News / calendar alignment</span><span class="badge">Pending</span></div>
-    <div class="factor"><span>TradingView alignment</span><span class="badge">Pending</span></div>
-   </div>`
-  );
- });
+function renderCalendar(){
+ const message=document.getElementById("calendarMessage"),list=document.getElementById("calendarList");
+ if(!calendarData.configured){message.textContent=calendarData.message||"Economic calendar provider is not connected.";list.innerHTML="";return}
+ message.textContent="";list.innerHTML=calendarData.events.map(e=>`<article class="event"><div class="event-top"><div><h4>${e.event}</h4><p>${e.date||""} • ${e.country}</p></div><span class="chip ${e.impact.toLowerCase()}">${e.impact}</span></div><p>Actual: ${e.actual??"—"} | Forecast: ${e.forecast??"—"} | Previous: ${e.previous??"—"}</p><div class="chips">${(e.affected||[]).map(x=>`<span class="chip">${x}</span>`).join("")}<span class="chip">Source: ${e.source||"Provider"}</span></div></article>`).join("");
 }
-
-function renderCotLeaders(){
- const commercial=[...ranking].sort((a,b)=>b.commercialChange-a.commercialChange);
- const noncommercial=[...ranking].sort((a,b)=>b.noncommercialChange-a.noncommercialChange);
- renderRank("commercialLeaders",commercial,"commercialChange",true);
- renderRank("noncommercialLeaders",noncommercial,"noncommercialChange",true);
+function renderProviders(){
+ const names={cftc:"CFTC COT",bbc:"BBC News RSS",fred:"FRED",trading_economics:"Trading Economics"};
+ const html=Object.entries(providerData).map(([key,value])=>`<div class="provider"><span>${names[key]||key}<br><small>${value.description||value.required_variable||""}</small></span><strong class="${value.configured?"on":"off"}">${value.configured?"Connected":"Not connected"}</strong></div>`).join("");
+ document.getElementById("providerList").innerHTML=html;document.getElementById("overviewProviders").innerHTML=html;
+ document.getElementById("providerCount").textContent=Object.values(providerData).filter(x=>x.configured).length;
 }
-
-function renderChart(){
- const currency=document.getElementById("chartCurrency").value;
- const rows=data.currencies[currency]||[];
- const target=document.getElementById("chart");
- if(!rows.length){target.innerHTML='<div class="message">No data</div>';return}
- const width=720,height=270,pad=38;
- const all=rows.flatMap(r=>[r.commercial_net,r.noncommercial_net]);
- const min=Math.min(...all),max=Math.max(...all);
- const x=i=>pad+i*(width-pad*2)/Math.max(1,rows.length-1);
- const y=v=>height-pad-(v-min)/(max-min||1)*(height-pad*2);
- const commercial=rows.map((r,i)=>`${x(i)},${y(r.commercial_net)}`).join(" ");
- const noncommercial=rows.map((r,i)=>`${x(i)},${y(r.noncommercial_net)}`).join(" ");
- let grid="";
- for(let i=0;i<5;i++){const gy=pad+i*(height-pad*2)/4;grid+=`<line class="gridline" x1="${pad}" y1="${gy}" x2="${width-pad}" y2="${gy}"/>`}
- const labels=rows.map((r,i)=>`<text x="${x(i)}" y="${height-8}" text-anchor="middle" fill="#8fa5bb" font-size="10">${r.report_date.slice(5)}</text>`).join("");
- const dotsC=rows.map((r,i)=>`<circle class="dot-commercial" cx="${x(i)}" cy="${y(r.commercial_net)}" r="3"/>`).join("");
- const dotsN=rows.map((r,i)=>`<circle class="dot-noncommercial" cx="${x(i)}" cy="${y(r.noncommercial_net)}" r="3"/>`).join("");
- target.innerHTML=`<svg viewBox="0 0 ${width} ${height}">${grid}<line class="axis" x1="${pad}" y1="${height-pad}" x2="${width-pad}" y2="${height-pad}"/><polyline class="line-commercial" points="${commercial}"/><polyline class="line-noncommercial" points="${noncommercial}"/>${dotsC}${dotsN}${labels}</svg>`;
+function renderMarkets(){
+ const msg=document.getElementById("marketProviderMessage"),cards=document.getElementById("globalMarketCards");
+ if(!marketsData.configured){msg.textContent=marketsData.message||"Global market provider is not connected.";cards.innerHTML="";return}
+ if(marketsData.error){msg.textContent=marketsData.error;cards.innerHTML="";return}
+ msg.textContent="Market provider connected. Quote normalization will be refined after your subscription symbols are confirmed.";
+ cards.innerHTML='<article class="metric"><span>Provider response</span><strong>Connected</strong><small>Raw market feed received</small></article>';
 }
-
-function renderTable(){
- const dates=reportDates();
- document.getElementById("head").innerHTML="<tr><th>Currency / Group</th>"+dates.map(d=>`<th>${d}</th>`).join("")+"<th>10W change</th></tr>";
- const body=document.getElementById("body");
- body.innerHTML="";
- Object.entries(data.currencies).forEach(([currency,rows],index)=>{
-  const map=Object.fromEntries(rows.map(row=>[row.report_date,row]));
-  [["commercial_net","Commercial","comm"],["noncommercial_net","Non-commercial","noncomm"]].forEach(([field,label,rowClass])=>{
-   let html=`<td><strong>${currency}</strong><span class="delta">${label}</span></td>`;
-   dates.forEach((reportDate,dateIndex)=>{
-    const value=map[reportDate]?.[field];
-    const previous=dateIndex?map[dates[dateIndex-1]]?.[field]:null;
-    const change=value!=null&&previous!=null?value-previous:null;
-    html+=`<td><span class="${value==null?"":cls(value)}">${fmt(value)}</span>${change==null?"":`<span class="delta">Δ ${fmt(change)}</span>`}</td>`;
-   });
-   const values=dates.map(date=>map[date]?.[field]).filter(value=>value!=null);
-   const totalChange=values.length>1?values.at(-1)-values[0]:null;
-   html+=`<td><span class="${totalChange==null?"":cls(totalChange)}">${fmt(totalChange)}</span></td>`;
-   const row=document.createElement("tr");row.className=rowClass;row.innerHTML=html;body.appendChild(row);
-  });
-  if(index<Object.keys(data.currencies).length-1){
-   const gap=document.createElement("tr");gap.className="gap";gap.innerHTML=`<td colspan="${dates.length+2}"></td>`;body.appendChild(gap);
-  }
- });
+function defaultSeasonality(){
+ return ["USD","EUR","GBP","JPY","GOLD","SILVER","FTSE100","SP500"].map(m=>({market:m,values:Array(12).fill(0)}));
 }
-
-function renderMatrix(){
- const scores=Object.fromEntries(ranking.map(item=>[item.currency,item.score]));
- const table=document.getElementById("pairMatrix");
- let html="<thead><tr><th>Base</th>"+currencies.map(c=>`<th>${c}</th>`).join("")+"</tr></thead><tbody>";
- currencies.forEach(row=>{
-  html+=`<tr><th>${row}</th>`;
-  currencies.forEach(column=>{
-   if(row===column){html+='<td class="neutral">—</td>';return}
-   const difference=(scores[row]??50)-(scores[column]??50);
-   const style=difference>=25?"strong":difference<=-25?"weak":"neutral";
-   html+=`<td class="${style}">${difference>0?"+":""}${difference}</td>`;
-  });
-  html+="</tr>";
- });
- table.innerHTML=html+"</tbody>";
+let seasonality=[];
+function loadSeasonality(){try{seasonality=JSON.parse(localStorage.getItem("seasonalityV6"))||defaultSeasonality()}catch{seasonality=defaultSeasonality()}}
+function renderSeasonality(){
+ document.getElementById("seasonHead").innerHTML="<tr><th>Market</th>"+months.map(m=>`<th>${m}</th>`).join("")+"<th>Delete</th></tr>";
+ document.getElementById("seasonBody").innerHTML=seasonality.map((row,ri)=>`<tr><td><input data-ri="${ri}" data-field="market" value="${row.market}"></td>${row.values.map((v,mi)=>`<td class="season-cell ${v>0?"posbg":v<0?"negbg":""}"><input type="number" step="0.1" data-ri="${ri}" data-mi="${mi}" value="${v}"></td>`).join("")}<td><button data-delete="${ri}">X</button></td></tr>`).join("");
+ document.querySelectorAll("#seasonBody input").forEach(input=>input.addEventListener("change",e=>{const ri=+e.target.dataset.ri;if(e.target.dataset.field==="market")seasonality[ri].market=e.target.value.toUpperCase();else seasonality[ri].values[+e.target.dataset.mi]=+e.target.value;renderSeasonality()}));
+ document.querySelectorAll("[data-delete]").forEach(b=>b.addEventListener("click",()=>{seasonality.splice(+b.dataset.delete,1);renderSeasonality()}));
 }
-
-function populateCurrencySelector(){
- const select=document.getElementById("chartCurrency");
- select.innerHTML=ranking.map(item=>`<option value="${item.currency}">${item.currency}</option>`).join("");
- select.value=ranking[0]?.currency||"USD";
+function seasonalScore(market,horizon){
+ const row=seasonality.find(x=>x.market===market);if(!row)return null;
+ const month=new Date().getMonth(),current=row.values[month]||0;
+ if(horizon==="Daily"||horizon==="Weekly"||horizon==="Monthly")return current;
+ const next=horizon==="6-Month"?6:12;let total=0;for(let i=0;i<next;i++)total+=row.values[(month+i)%12]||0;return total/next;
 }
-
-function renderAll(){
- buildRanking();
- renderRank("overviewRanking");
- renderRank("fullRanking");
- renderOpportunities();
- renderStrengthPairs();
- renderFlowCards();
- renderConfluence();
- renderCotLeaders();
- populateCurrencySelector();
- renderChart();
- renderTable();
- renderMatrix();
- document.getElementById("bestCurrency").textContent=ranking[0]?.currency||"—";
- document.getElementById("worstCurrency").textContent=ranking.at(-1)?.currency||"—";
- document.getElementById("loadedCount").textContent=ranking.length+"/8";
+function renderOutlook(){
+ const market=document.getElementById("outlookMarket").value,r=relationship(market),season=seasonalScore(market,activeHorizon);
+ let available=1,total=0;const evidence=[];
+ const relationContribution=Math.max(-50,Math.min(50,r.relation/Math.max(1,Math.abs(r.commercial)+Math.abs(r.noncommercial))*50));total+=relationContribution;
+ evidence.push(["COT relationship",`${r.bias} (${relationContribution.toFixed(0)})`]);
+ if(season!=null){available++;total+=Math.max(-25,Math.min(25,season*5));evidence.push(["Seasonality",`${season.toFixed(2)}% tendency`])}
+ const relevantNews=newsData.filter(n=>n.affected_markets.includes(market)&&n.impact==="High").length;if(relevantNews){available++;evidence.push(["High-impact news",`${relevantNews} current stories`])}
+ if(macroData.configured){available++;evidence.push(["FRED macro",`Connected`])}
+ if(marketsData.configured&&!marketsData.error){available++;evidence.push(["Global markets",`Connected`])}
+ const score=Math.round(50+total),bias=score>=60?"Bullish":score<=40?"Bearish":"Neutral",confidence=Math.min(100,Math.round(available/5*100));
+ document.getElementById("outlookContent").innerHTML=`<div class="cols"><article class="outlook-card"><h4>${market} — ${activeHorizon}</h4><div class="score">${bias} ${score}/100</div><p>Confidence ${confidence}/100 based on ${available} of 5 planned evidence groups.</p><div class="evidence">${evidence.map(([a,b])=>`<div><span>${a}</span><strong>${b}</strong></div>`).join("")}</div></article><article class="interpretation ${bias.toLowerCase()}"><h4>Outlook explanation</h4><p>${r.explanation}</p><p>${season==null?"No seasonal data has been entered for this market.":`Current seasonal input is ${season>=0?"supportive":"opposing"} at ${season.toFixed(2)}%.`}</p><p>Unconnected factors reduce confidence and are not assigned invented values.</p></article></div>`;
 }
-
-async function load(){
- const status=document.getElementById("status"),message=document.getElementById("message");
+async function loadAll(){
  try{
-  const response=await fetch("/api/cot");
-  if(!response.ok){const detail=await response.json();throw new Error(detail.detail||"Data unavailable")}
-  data=await response.json();
-  status.textContent="Live CFTC data";
-  status.className="status live";
-  document.getElementById("refreshTime").textContent="Last refresh: "+(data.last_refresh||"—");
-  message.style.display="none";
-  renderAll();
- }catch(error){
-  status.textContent="Warming up";
-  status.className="status error";
-  message.style.display="block";
-  message.textContent=error.message+" Refresh the page shortly.";
- }
+  const [cotRes,newsRes,providersRes,calendarRes,macroRes,marketsRes]=await Promise.all([fetch("/api/cot"),fetch("/api/news"),fetch("/api/providers"),fetch("/api/calendar"),fetch("/api/macro"),fetch("/api/markets")]);
+  cotData=await cotRes.json();const newsPayload=await newsRes.json();newsData=newsPayload.items||[];providerData=await providersRes.json();calendarData=await calendarRes.json();macroData=await macroRes.json();marketsData=await marketsRes.json();
+  document.getElementById("status").textContent="Live CFTC + BBC";document.getElementById("status").className="status live";
+  document.getElementById("refreshTime").textContent="Last COT refresh: "+(cotData.last_refresh?.time?new Date(cotData.last_refresh.time).toLocaleString("en-GB"):"—");
+  populateSelect("overviewMarket",currencyMarkets);populateSelect("cotMarket",currencyMarkets);populateSelect("metalSelect",metalMarkets);populateSelect("outlookMarket",[...currencyMarkets,...metalMarkets]);
+  const nm=document.getElementById("newsMarket");nm.innerHTML='<option value="All">All</option>'+[...currencyMarkets,...metalMarkets,"GLOBAL"].map(x=>`<option>${x}</option>`).join("");
+  renderRanking();renderInterpretations();renderCotChart();renderMetals();renderNews();renderCalendar();renderProviders();renderMarkets();renderOutlook();
+ }catch(error){document.getElementById("status").textContent="Load error";document.getElementById("status").className="status error";console.error(error)}
 }
-
-document.getElementById("refresh").addEventListener("click",async()=>{
- const button=document.getElementById("refresh");
- button.disabled=true;button.textContent="Refreshing…";
- try{await fetch("/api/cot/refresh",{method:"POST"});await load()}
- finally{button.disabled=false;button.textContent="Refresh CFTC"}
-});
-mode.addEventListener("change",()=>data&&renderAll());
-document.getElementById("chartCurrency").addEventListener("change",renderChart);
-load();
+document.getElementById("overviewMarket").addEventListener("change",renderInterpretations);
+["cotMarket","chartMode","showCommercial","showNoncommercial"].forEach(id=>document.getElementById(id).addEventListener("change",renderCotChart));
+document.getElementById("metalSelect").addEventListener("change",renderMetals);
+["newsImpact","newsMarket"].forEach(id=>document.getElementById(id).addEventListener("change",renderNews));
+document.getElementById("reloadNews").addEventListener("click",async()=>{const p=await (await fetch("/api/news")).json();newsData=p.items||[];renderNews()});
+document.getElementById("refresh").addEventListener("click",async()=>{await fetch("/api/cot/refresh",{method:"POST"});location.reload()});
+numberMode.addEventListener("change",()=>{renderRanking();renderInterpretations();renderCotChart();renderMetals();renderOutlook()});
+document.getElementById("addSeasonMarket").addEventListener("click",()=>{seasonality.push({market:"NEW",values:Array(12).fill(0)});renderSeasonality()});
+document.getElementById("saveSeasonality").addEventListener("click",()=>{localStorage.setItem("seasonalityV6",JSON.stringify(seasonality));alert("Seasonality saved in this browser.")});
+document.getElementById("resetSeasonality").addEventListener("click",()=>{seasonality=defaultSeasonality();renderSeasonality()});
+document.querySelectorAll(".outlook-tab").forEach(b=>b.addEventListener("click",()=>{document.querySelectorAll(".outlook-tab").forEach(x=>x.classList.remove("active"));b.classList.add("active");activeHorizon=b.dataset.horizon;renderOutlook()}));
+document.getElementById("outlookMarket").addEventListener("change",renderOutlook);
+loadSeasonality();renderSeasonality();loadAll();
 </script>
 </body>
 </html>
