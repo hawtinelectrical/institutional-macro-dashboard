@@ -1,50 +1,53 @@
-# Institutional Market Intelligence Terminal — Cloud v6
+# Institutional Market Intelligence Terminal — Version 6 Rebuilt
+
+This rebuild is safe to deploy over the existing Version 5 PostgreSQL database.
+
+## Migration safety
+
+- Keeps the existing `cot_positions.currency` schema used by Version 5.
+- Adds a separate `metal_cot_positions` table.
+- Adds a separate `seasonality_values` table.
+- Uses additive table creation only; it does not rename or drop the live COT table.
 
 ## Live without extra keys
 
-- CFTC Legacy Futures-Only COT data
-- Commercial and Non-commercial positions
+- CFTC Legacy Futures-Only COT
 - 8 major currencies
 - Gold, silver, platinum and palladium COT
-- Commercial / Non-commercial on-off controls
-- net-position and weekly buying/selling line graphs
-- relationship interpretation engine
-- BBC Business, World and UK RSS feeds
-- news impact, country, market and effects classification
-- editable browser-saved seasonality heatmap
-- daily, weekly, monthly, 6-month and yearly outlook framework
+- Commercial and Non-commercial ON/OFF controls
+- Net-position chart
+- Weekly buying/selling chart
+- Relationship interpretation
+- BBC Business, World and UK RSS
+- Cloud-stored seasonality
+- Daily, weekly, monthly, 6-month and yearly outlook framework
 
-## Optional provider keys
+## Safer interpretation
 
-Add these in Render → Environment:
+The dashboard distinguishes:
+
+1. **Trend relationship**
+   - Commercial selling + Non-commercial buying = bullish relationship
+   - Commercial buying + Non-commercial selling = bearish relationship
+
+2. **Reversal warning**
+   - Opposing Commercial activity may become relevant at extremes.
+
+3. **Trade confirmation**
+   - Not confirmed until price and the TradingView HTF/MTF/LTF structure agree.
+
+## Optional Render environment variables
 
 - `FRED_API_KEY`
-  - US 2Y, 10Y, 30Y yields
-  - Fed funds
-  - US 10Y real yield
-
 - `TRADING_ECONOMICS_API_KEY`
-  - economic calendar
-  - global stock indices
-  - precious-metal prices
-  - wider market feeds, subject to subscription permissions
 
-## Important interpretation
+## Update the live site
 
-The V6 relationship engine follows this requested model:
-
-- Commercial selling + Non-commercial buying = bullish relationship
-- Commercial buying + Non-commercial selling = bearish relationship
-
-This is directional context, not standalone entry timing. Price and the TradingView structure model should confirm entries.
-
-## Update live site
-
-Replace in GitHub:
+Replace:
 
 - `app/main.py`
 - `app/static/index.html`
 - `requirements.txt`
 - `README.md`
 
-Commit. Render auto-deploys.
+Commit to GitHub and allow Render to redeploy.
