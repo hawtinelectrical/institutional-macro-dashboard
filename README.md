@@ -1,17 +1,31 @@
-# Version 7.5 — Currency and Pair Intelligence
+# Version 7.6 — TradingView Setup Centre
 
 ## Added
 
-- Dedicated pages for USD, EUR, GBP, JPY, CHF, CAD, AUD and NZD
-- Daily, weekly, monthly, 6-month and yearly currency scoring
-- COT relationship, seasonality, news, calendar, global regime and rate evidence
-- Confidence based on available evidence
-- Supporting and conflicting evidence displayed separately
-- Relevant news and upcoming events per currency
-- Strongest-versus-weakest pair ranking
-- Configurable top 5, 10 or 15 pairs
-- Full “Why this pair?” breakdown
-- Explicit “Not confirmed” status until TradingView HTF/MTF/LTF alignment
+- Cloud-saved pair watchlist
+- Long or Short direction
+- HTF Bullish / Bearish / Neutral
+- MTF CHoCH confirmation
+- LTF CHoCH confirmation
+- BOS confirmation
+- Pullback-ready confirmation
+- Manual invalidation
+- Setup notes
+- Automatic technical score
+- Not Ready / Watch / Ready / Invalidated status
+- Macro-versus-technical alignment
+- 40% macro and 60% technical combined score
+- “Waiting for” checklist
+- Load the current top-ranked pair into the setup form
+
+## Status rules
+
+- **Ready:** HTF aligned, MTF CHoCH, LTF CHoCH, BOS and pullback are all complete.
+- **Watch:** HTF is aligned and at least one further confirmation is present.
+- **Not Ready:** insufficient alignment.
+- **Invalidated:** manually cancelled.
+
+This remains a decision-support tool. Ready does not replace price review, risk management or event checks.
 
 ## Update GitHub
 
@@ -21,8 +35,8 @@ Replace:
 - `app/static/index.html`
 - `README.md`
 
-Keep `app/providers/` unchanged.
+Keep the existing `app/providers/` folder.
 
 Commit with:
 
-`Version 7.5 currency and pair intelligence`
+`Version 7.6 TradingView setup centre`
