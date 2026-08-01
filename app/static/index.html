@@ -140,7 +140,7 @@ footer{text-align:center;color:#7d92aa;padding:18px}
   <button class="nav" data-page="outlooks">Outlooks</button>
   <button class="nav" data-page="providers">Data Connections</button>
  </nav>
- <div class="version">Version 8.3<br>Current Month Highlight</div>
+ <div class="version">Version 8.4<br>Seasonality Backtesting</div>
 </aside>
 
 <main class="content">
@@ -504,6 +504,36 @@ footer{text-align:center;color:#7d92aa;padding:18px}
    <div id="seasonDetail"></div>
   </article>
  </div>
+
+ <div class="cols">
+  <article class="panel red">
+   <div class="heading"><div><h3>Backtest statistics</h3><p>Median, volatility, best/worst outcomes and current-year divergence.</p></div></div>
+   <div id="seasonBacktestDetail"></div>
+  </article>
+  <article class="panel green">
+   <div class="heading"><div><h3>Strongest seasonal windows</h3><p>Best two- and three-month windows from the selected profile.</p></div></div>
+   <div id="seasonWindowList"></div>
+  </article>
+ </div>
+
+ <article class="panel blue">
+  <div class="heading">
+   <div><h3>Current year vs historical pattern</h3><p>Current-year monthly return where available, compared with the 10-year profile.</p></div>
+  </div>
+  <div id="seasonCurrentYearChart" class="chart-wrap"></div>
+ </article>
+
+ <article class="panel cyan">
+  <div class="heading">
+   <div><h3>Direct pair seasonality</h3><p>Uses an actual pair profile when available, otherwise derives the difference between base and quote currency profiles.</p></div>
+  </div>
+  <div class="controls">
+   <input id="seasonPairBase" value="GBP" maxlength="3">
+   <input id="seasonPairQuote" value="JPY" maxlength="3">
+   <button id="loadPairSeasonality">Load pair</button>
+  </div>
+  <div id="pairSeasonalityDetail"></div>
+ </article>
 
  <article class="panel cyan">
   <div class="heading"><div><h3>Edit selected cell</h3><p>Use the figures from your seasonal map or research source.</p></div></div>
@@ -996,7 +1026,121 @@ async function refreshAutomaticSeasonality(group){
  }
 }
 
+
+async function loadSeasonalityBacktests(){
+ try{
+  const response=await fetch("/api/seasonality/backtest");
+  const payload=await response.json();
+  seasonalityBacktests=payload.markets||{};
+ }catch{
+  seasonalityBacktests={};
+ }
+}
+function selectedBacktestRow(market){
+ const rows=seasonalityBacktests[market]||[];
+ return rows[new Date().getMonth()]||null;
+}
+function renderSeasonBacktestDetail(){
+ const market=document.getElementById("seasonDetailMarket").value;
+ const row=selectedBacktestRow(market);
+ const target=document.getElementById("seasonBacktestDetail");
+ if(!row){
+  target.innerHTML='<div class="message">Run automatic seasonality refresh to calculate backtest statistics.</div>';
+  return;
+ }
+ const current=row.current_year_return;
+ const divergence=row.divergence;
+ target.innerHTML=`<div class="grid3">
+  <div class="metric"><span>Median return</span><strong>${row.median_return>0?"+":""}${Number(row.median_return).toFixed(2)}%</strong><small>More robust than the mean</small></div>
+  <div class="metric"><span>Volatility</span><strong>${Number(row.volatility).toFixed(2)}%</strong><small>Historical dispersion</small></div>
+  <div class="metric"><span>Reliability</span><strong>${row.reliability_grade}</strong><small>${row.positive_years} positive / ${row.negative_years} negative</small></div>
+ </div>
+ <div class="evidence">
+  <div><span>Best historical outcome</span><strong>${row.best_return>0?"+":""}${Number(row.best_return).toFixed(2)}%</strong></div>
+  <div><span>Worst historical outcome</span><strong>${Number(row.worst_return).toFixed(2)}%</strong></div>
+  <div><span>Drawdown proxy</span><strong>${Number(row.max_drawdown).toFixed(2)}%</strong></div>
+  <div><span>Current-year return</span><strong>${current==null?"Unavailable":`${current>0?"+":""}${Number(current).toFixed(2)}%`}</strong></div>
+  <div><span>Current-year divergence</span><strong>${divergence==null?"Unavailable":`${divergence>0?"+":""}${Number(divergence).toFixed(2)} pp`}</strong></div>
+ </div>`;
+}
+async function renderSeasonWindows(){
+ const market=document.getElementById("seasonDetailMarket").value;
+ const response=await fetch(`/api/seasonality/windows/${encodeURIComponent(market)}?metric=average_10y`);
+ const payload=await response.json();
+ const windows=payload.windows||[];
+ document.getElementById("seasonWindowList").innerHTML=windows.map((row,index)=>`<div class="provider">
+  <span>#${index+1} ${months[row.start_month-1]} → ${months[row.end_month-1]}<br><small>${row.length_months}-month window</small></span>
+  <strong>${row.average_return>0?"+":""}${Number(row.average_return).toFixed(2)}%</strong>
+ </div>`).join("")||'<div class="message">No seasonal windows available.</div>';
+}
+function renderCurrentYearComparison(){
+ const market=document.getElementById("seasonDetailMarket").value;
+ const profile=seasonalProfile(market);
+ const backtests=seasonalityBacktests[market]||[];
+ const target=document.getElementById("seasonCurrentYearChart");
+ if(!profile||!backtests.length){
+  target.innerHTML='<div class="message">Run automatic seasonality refresh to calculate current-year comparison.</div>';
+  return;
+ }
+ const width=760,height=290,pad=42;
+ const historical=profile.months.map(month=>Number(month.average_10y||0));
+ const current=backtests.map(row=>row.current_year_return);
+ const all=[...historical,...current.filter(value=>value!=null),0];
+ const min=Math.min(...all),max=Math.max(...all);
+ const x=i=>pad+i*(width-pad*2)/11;
+ const y=v=>height-pad-(v-min)/(max-min||1)*(height-pad*2);
+ const historicalPoints=historical.map((value,index)=>`${x(index)},${y(value)}`).join(" ");
+ const currentValid=current.map((value,index)=>value==null?null:{value,index}).filter(Boolean);
+ const currentPoints=currentValid.map(point=>`${x(point.index)},${y(point.value)}`).join(" ");
+ const labels=months.map((month,index)=>`<text x="${x(index)}" y="${height-8}" text-anchor="middle" fill="#8fa5bb" font-size="10">${month}</text>`).join("");
+ const currentMonthIndex=new Date().getMonth();
+ target.innerHTML=`<svg viewBox="0 0 ${width} ${height}">
+  <line class="axis" x1="${pad}" y1="${y(0)}" x2="${width-pad}" y2="${y(0)}"/>
+  <line x1="${x(currentMonthIndex)}" y1="${pad}" x2="${x(currentMonthIndex)}" y2="${height-pad}" stroke="#ffe600" stroke-width="2"/>
+  <polyline style="fill:none;stroke:#28d18b;stroke-width:3" points="${historicalPoints}"/>
+  ${currentPoints?`<polyline style="fill:none;stroke:#27d3e4;stroke-width:3" points="${currentPoints}"/>`:""}
+  ${currentValid.map(point=>`<circle cx="${x(point.index)}" cy="${y(point.value)}" r="5" fill="#27d3e4"/>`).join("")}
+  ${labels}
+ </svg>
+ <div class="legend">
+  <span class="legend-key"><i class="swatch" style="background:#28d18b"></i>10Y historical average</span>
+  <span class="legend-key"><i class="swatch" style="background:#27d3e4"></i>Current year</span>
+ </div>`;
+}
+async function loadDirectPairSeasonality(){
+ const base=document.getElementById("seasonPairBase").value.toUpperCase().trim();
+ const quote=document.getElementById("seasonPairQuote").value.toUpperCase().trim();
+ const target=document.getElementById("pairSeasonalityDetail");
+ if(base.length!==3||quote.length!==3){
+  target.innerHTML='<div class="message">Enter two three-letter currencies.</div>';
+  return;
+ }
+ const response=await fetch(`/api/seasonality/pair/${base}/${quote}?metric=average_10y`);
+ const payload=await response.json();
+ if(!payload.available){
+  target.innerHTML='<div class="message">No direct or derived profile is available for this pair.</div>';
+  return;
+ }
+ const currentMonthIndex=new Date().getMonth();
+ const currentValue=Number(payload.months[currentMonthIndex]?.average_10y||0);
+ target.innerHTML=`<div class="grid3">
+  <div class="metric"><span>Pair</span><strong>${payload.pair}</strong><small>${payload.source}</small></div>
+  <div class="metric"><span>Current month</span><strong>${currentValue>0?"+":""}${currentValue.toFixed(2)}%</strong><small>${months[currentMonthIndex]}</small></div>
+  <div class="metric"><span>Seasonal bias</span><strong>${currentValue>0?"Bullish":currentValue<0?"Bearish":"Neutral"}</strong><small>10-year profile</small></div>
+ </div>
+ <div class="season-grid"><table class="season-table"><thead><tr>${months.map((month,index)=>`<th class="${index===currentMonthIndex?"current-month-head":""}">${month}</th>`).join("")}</tr></thead><tbody><tr>${payload.months.map((row,index)=>{
+  const value=Number(row.average_10y||0);
+  return `<td class="heat-cell ${heatClass(value,"average_10y")} ${index===currentMonthIndex?"current-month-cell":""}">${value>0?"+":""}${value.toFixed(2)}%</td>`;
+ }).join("")}</tr></tbody></table></div>`;
+}
+async function renderBacktestingPanels(){
+ renderSeasonBacktestDetail();
+ await renderSeasonWindows();
+ renderCurrentYearComparison();
+}
+
 async function loadSeasonality(){
+ await loadSeasonalityBacktests();
  try{
   const response=await fetch("/api/seasonality/v2");
   const payload=await response.json();
@@ -1056,6 +1200,7 @@ function renderSeasonality(){
  if(!selectedSeasonCell.market&&seasonalityProfiles.length)selectSeasonCell(seasonalityProfiles[0].market,currentMonth,false);
  renderSeasonCurve();
  renderSeasonDetail();
+ renderBacktestingPanels();
 }
 function selectSeasonCell(market,monthIndex,rerender=true){
  selectedSeasonCell={market,monthIndex};
@@ -1071,7 +1216,7 @@ function selectSeasonCell(market,monthIndex,rerender=true){
  document.getElementById("seasonEditNotes").value=month.notes||"";
  if(rerender){
   document.getElementById("seasonDetailMarket").value=market;
-  renderSeasonCurve();renderSeasonDetail();
+  renderSeasonCurve();renderSeasonDetail();renderBacktestingPanels();
  }
 }
 function applySeasonCell(){
@@ -1493,7 +1638,8 @@ document.getElementById("applySeasonCell").addEventListener("click",applySeasonC
 document.getElementById("alignmentHorizon").addEventListener("change",renderAlignment);
 document.getElementById("alignmentCount").addEventListener("change",renderAlignment);
 document.getElementById("alignmentPairSelect").addEventListener("change",renderAlignmentDetail);
-loadAutoSeasonalityStatus();loadSeasonality();loadAll();
+document.getElementById("loadPairSeasonality").addEventListener("click",loadDirectPairSeasonality);
+loadAutoSeasonalityStatus();loadSeasonality().then(loadDirectPairSeasonality);loadAll();
 </script>
 </body>
 </html>
