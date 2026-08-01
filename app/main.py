@@ -68,8 +68,26 @@ METAL_MARKETS = ["GOLD", "SILVER", "PLATINUM", "PALLADIUM"]
 
 BBC_FEEDS = {
     "BBC Business": "https://feeds.bbci.co.uk/news/business/rss.xml",
-    "BBC World": "https://feeds.bbci.co.uk/news/world/rss.xml",
-    "BBC UK": "https://feeds.bbci.co.uk/news/uk/rss.xml",
+}
+
+# Free-tier Global Markets uses liquid US-listed ETFs as transparent proxies.
+# This avoids claiming that a delayed ETF price is the official cash index level.
+FREE_MARKET_PROXIES: dict[str, dict[str, str]] = {
+    "UK": {"symbol": "EWU", "name": "United Kingdom", "benchmark": "FTSE / broad UK equities"},
+    "US_LARGE": {"symbol": "SPY", "name": "US Large Cap", "benchmark": "S&P 500"},
+    "US_TECH": {"symbol": "QQQ", "name": "US Technology", "benchmark": "Nasdaq 100"},
+    "US_DOW": {"symbol": "DIA", "name": "US Blue Chips", "benchmark": "Dow Jones"},
+    "US_SMALL": {"symbol": "IWM", "name": "US Small Cap", "benchmark": "Russell 2000"},
+    "GERMANY": {"symbol": "EWG", "name": "Germany", "benchmark": "German equities / DAX context"},
+    "FRANCE": {"symbol": "EWQ", "name": "France", "benchmark": "French equities / CAC context"},
+    "EUROPE": {"symbol": "VGK", "name": "Europe", "benchmark": "Broad developed Europe"},
+    "JAPAN": {"symbol": "EWJ", "name": "Japan", "benchmark": "Japanese equities / Nikkei context"},
+    "HONG_KONG": {"symbol": "EWH", "name": "Hong Kong", "benchmark": "Hong Kong equities"},
+    "CHINA": {"symbol": "FXI", "name": "China Large Cap", "benchmark": "Large Chinese equities"},
+    "AUSTRALIA": {"symbol": "EWA", "name": "Australia", "benchmark": "Australian equities / ASX context"},
+    "CANADA": {"symbol": "EWC", "name": "Canada", "benchmark": "Canadian equities / TSX context"},
+    "INDIA": {"symbol": "INDA", "name": "India", "benchmark": "Indian equities / Nifty context"},
+    "BRAZIL": {"symbol": "EWZ", "name": "Brazil", "benchmark": "Brazilian equities / Bovespa context"},
 }
 
 COUNTRY_RULES = {
@@ -654,6 +672,123 @@ def save_seasonality(payload: dict[str, Any]) -> dict[str, Any]:
     return {"saved": True, "markets": len(rows)}
 
 
+
+def _change_pct(values: list[dict[str, Any]], periods_back: int) -> float | None:
+    if len(values) <= periods_back:
+        return None
+    latest = float(values[0]["close"])
+    previous = float(values[periods_back]["close"])
+    if previous == 0:
+        return None
+    return round((latest / previous - 1) * 100, 2)
+
+
+async def twelve_data_free_markets() -> dict[str, Any]:
+    api_key = os.getenv("TWELVE_DATA_API_KEY")
+    if not api_key:
+        return {
+            "configured": False,
+            "provider": "Twelve Data",
+            "markets": [],
+            "message": "Add a free TWELVE_DATA_API_KEY in Render to activate Global Markets.",
+            "proxy_note": "Major regions are represented by liquid US-listed ETFs, not official cash-index levels.",
+        }
+
+    symbols = ",".join(item["symbol"] for item in FREE_MARKET_PROXIES.values())
+    params = {
+        "symbol": symbols,
+        "interval": "1day",
+        "outputsize": 260,
+        "apikey": api_key,
+        "format": "JSON",
+    }
+
+    async with httpx.AsyncClient(timeout=60) as client:
+        response = await client.get("https://api.twelvedata.com/time_series", params=params)
+        response.raise_for_status()
+        raw = response.json()
+
+    # A multi-symbol response is keyed by symbol. A single error response has status=error.
+    if raw.get("status") == "error":
+        return {
+            "configured": True,
+            "provider": "Twelve Data",
+            "markets": [],
+            "error": raw.get("message", "Twelve Data returned an error."),
+            "proxy_note": "Major regions are represented by liquid US-listed ETFs.",
+        }
+
+    by_symbol = {definition["symbol"]: (key, definition) for key, definition in FREE_MARKET_PROXIES.items()}
+    markets = []
+    errors = []
+
+    for symbol, (market_id, definition) in by_symbol.items():
+        payload = raw.get(symbol)
+        if not payload:
+            errors.append({"symbol": symbol, "error": "No response returned"})
+            continue
+        if payload.get("status") == "error":
+            errors.append({"symbol": symbol, "error": payload.get("message", "Unavailable")})
+            continue
+
+        values = payload.get("values", [])
+        if not values:
+            errors.append({"symbol": symbol, "error": "No price history"})
+            continue
+
+        latest = values[0]
+        latest_close = float(latest["close"])
+        daily = _change_pct(values, 1)
+        weekly = _change_pct(values, min(5, len(values) - 1))
+        monthly = _change_pct(values, min(21, len(values) - 1))
+        six_month = _change_pct(values, min(126, len(values) - 1))
+        yearly = _change_pct(values, min(252, len(values) - 1))
+
+        chart = [
+            {"date": row["datetime"][:10], "close": float(row["close"])}
+            for row in reversed(values[:60])
+        ]
+
+        markets.append({
+            "id": market_id,
+            "symbol": symbol,
+            "name": definition["name"],
+            "benchmark": definition["benchmark"],
+            "date": latest["datetime"][:10],
+            "close": latest_close,
+            "currency": payload.get("meta", {}).get("currency", "USD"),
+            "daily_change_pct": daily,
+            "weekly_change_pct": weekly,
+            "monthly_change_pct": monthly,
+            "six_month_change_pct": six_month,
+            "yearly_change_pct": yearly,
+            "trend": "Bullish" if (monthly or 0) > 1 else "Bearish" if (monthly or 0) < -1 else "Neutral",
+            "chart": chart,
+        })
+
+    # A transparent risk score based only on markets successfully returned.
+    risk_values = [row["weekly_change_pct"] for row in markets if row["weekly_change_pct"] is not None]
+    average_weekly = round(sum(risk_values) / len(risk_values), 2) if risk_values else None
+    risk_regime = (
+        "Risk-on" if average_weekly is not None and average_weekly > 0.5
+        else "Risk-off" if average_weekly is not None and average_weekly < -0.5
+        else "Mixed"
+    )
+
+    return {
+        "configured": True,
+        "provider": "Twelve Data free tier",
+        "markets": markets,
+        "errors": errors,
+        "risk_regime": risk_regime,
+        "average_weekly_change_pct": average_weekly,
+        "proxy_note": (
+            "These are liquid US-listed ETF proxies used for free macro context. "
+            "They are not official index levels and can differ because of currency, fees and trading hours."
+        ),
+    }
+
+
 scheduler = AsyncIOScheduler(timezone="UTC")
 
 
@@ -676,7 +811,7 @@ async def lifespan(_: FastAPI):
     scheduler.shutdown(wait=False)
 
 
-app = FastAPI(title="Institutional Macro Dashboard Cloud v6.1 News Hotfix", lifespan=lifespan)
+app = FastAPI(title="Institutional Macro Dashboard Cloud v6.2 Free Markets", lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
@@ -699,6 +834,7 @@ async def health(background_tasks: BackgroundTasks) -> dict[str, Any]:
             "bbc": True,
             "fred": bool(os.getenv("FRED_API_KEY")),
             "trading_economics": bool(os.getenv("TRADING_ECONOMICS_API_KEY")),
+            "twelve_data": bool(os.getenv("TWELVE_DATA_API_KEY")),
         },
         "last_refresh": current["last_refresh"],
     }
@@ -744,6 +880,11 @@ async def post_seasonality(payload: dict[str, Any]) -> dict[str, Any]:
     return save_seasonality(payload)
 
 
+@app.get("/api/markets")
+async def markets() -> dict[str, Any]:
+    return await twelve_data_free_markets()
+
+
 @app.get("/api/providers")
 async def providers() -> dict[str, Any]:
     return {
@@ -753,8 +894,14 @@ async def providers() -> dict[str, Any]:
             "configured": bool(os.getenv("FRED_API_KEY")),
             "required_variable": "FRED_API_KEY",
         },
+        "twelve_data": {
+            "configured": bool(os.getenv("TWELVE_DATA_API_KEY")),
+            "required_variable": "TWELVE_DATA_API_KEY",
+            "description": "Free-tier ETF proxies for Global Markets",
+        },
         "trading_economics": {
             "configured": bool(os.getenv("TRADING_ECONOMICS_API_KEY")),
             "required_variable": "TRADING_ECONOMICS_API_KEY",
+            "description": "Optional future upgrade for official index and calendar data",
         },
     }
