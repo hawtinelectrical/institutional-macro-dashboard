@@ -1,31 +1,46 @@
-# Version 7.6 — TradingView Setup Centre
+# Version 8 — Seasonality and Institutional Alignment
 
-## Added
+## Seasonality Engine
 
-- Cloud-saved pair watchlist
-- Long or Short direction
-- HTF Bullish / Bearish / Neutral
-- MTF CHoCH confirmation
-- LTF CHoCH confirmation
-- BOS confirmation
-- Pullback-ready confirmation
-- Manual invalidation
-- Setup notes
-- Automatic technical score
-- Not Ready / Watch / Ready / Invalidated status
-- Macro-versus-technical alignment
-- 40% macro and 60% technical combined score
-- “Waiting for” checklist
-- Load the current top-ranked pair into the setup form
+- Monthly heatmaps
+- 5-year average return
+- 10-year average return
+- 20-year average return
+- Win rate
+- Sample years
+- Reliability score
+- Cloud-stored profiles
+- Cell editor
+- Seasonal curves
+- Current-month leaders
+- Six-month and yearly averages
+- Seasonality incorporated into currency and pair scoring
 
-## Status rules
+Daily and weekly displays use the current monthly seasonal backdrop. They are
+not presented as separate historical daily or weekly studies unless that data
+is later supplied.
 
-- **Ready:** HTF aligned, MTF CHoCH, LTF CHoCH, BOS and pullback are all complete.
-- **Watch:** HTF is aligned and at least one further confirmation is present.
-- **Not Ready:** insufficient alignment.
-- **Invalidated:** manually cancelled.
+## Institutional Alignment Engine
 
-This remains a decision-support tool. Ready does not replace price review, risk management or event checks.
+Combines:
+
+- Commercial / Non-commercial COT relationship
+- Seasonality and reliability
+- Financial news
+- Economic calendar
+- FRED rates evidence
+- Global risk regime
+- Saved TradingView technical setup
+
+Outputs:
+
+- Currency alignment ranking
+- Pair alignment ranking
+- Macro score
+- Technical score
+- Combined alignment
+- Conflicting evidence
+- Macro Only / Watch / Trade Ready / Invalidated status
 
 ## Update GitHub
 
@@ -39,4 +54,4 @@ Keep the existing `app/providers/` folder.
 
 Commit with:
 
-`Version 7.6 TradingView setup centre`
+`Version 8 seasonality and alignment`
