@@ -88,7 +88,7 @@ footer{text-align:center;color:#7d92aa;padding:18px}
   <button class="nav" data-page="outlooks">Outlooks</button>
   <button class="nav" data-page="providers">Data Connections</button>
  </nav>
- <div class="version">Version 8.1<br>Automatic Seasonality</div>
+ <div class="version">Version 8.2<br>Dollar Index & Seasonality</div>
 </aside>
 
 <main class="content">
@@ -404,14 +404,15 @@ footer{text-align:center;color:#7d92aa;padding:18px}
    <article class="metric"><span>Data provider</span><strong id="autoSeasonProvider">—</strong><small>Twelve Data monthly history</small></article>
    <article class="metric"><span>Currency group</span><strong id="autoSeasonCoreStatus">Never run</strong><small id="autoSeasonCoreTime">8 symbols</small></article>
    <article class="metric"><span>Assets group</span><strong id="autoSeasonAssetsStatus">Never run</strong><small id="autoSeasonAssetsTime">8 symbols</small></article>
-   <article class="metric"><span>Update schedule</span><strong>Monthly</strong><small>Two rate-limit-safe jobs</small></article>
+   <article class="metric"><span>Dollar Index</span><strong id="autoSeasonDxyStatus">Never run</strong><small id="autoSeasonDxyTime">DXY with UUP fallback</small></article>
   </div>
   <div class="controls">
    <button id="refreshSeasonCore">Refresh currencies now</button>
    <button id="refreshSeasonAssets">Refresh metals & indices now</button>
+   <button id="refreshSeasonDxy">Refresh Dollar Index now</button>
    <span id="autoSeasonMessage" class="status">Ready</span>
   </div>
-  <p style="color:var(--muted)">The free plan is protected by splitting updates into two groups of eight. Do not click both buttons within the same minute.</p>
+  <p style="color:var(--muted)">The Dollar Index refresh tries DXY first and uses UUP only as a labelled fallback. Leave at least one minute between each manual refresh group.</p>
  </article>
 
  <article class="panel gold">
@@ -895,11 +896,18 @@ function autoGroupSummary(group){
 }
 function renderAutoSeasonalityStatus(){
  document.getElementById("autoSeasonProvider").textContent=autoSeasonalityStatus.configured?"Connected":"Not connected";
- const core=autoGroupSummary("core"),assets=autoGroupSummary("assets");
+ const core=autoGroupSummary("core"),assets=autoGroupSummary("assets"),dxy=autoGroupSummary("dxy");
  document.getElementById("autoSeasonCoreStatus").textContent=core.label;
  document.getElementById("autoSeasonCoreTime").textContent=core.time;
  document.getElementById("autoSeasonAssetsStatus").textContent=assets.label;
  document.getElementById("autoSeasonAssetsTime").textContent=assets.time;
+ document.getElementById("autoSeasonDxyStatus").textContent=dxy.label;
+ const dxyData=autoSeasonalityStatus?.groups?.dxy;
+ const dxyResult=dxyData?.results?.[0];
+ const sourceText=dxyResult?.symbol
+   ? `${dxyResult.symbol}${dxyResult.fallback_used?" fallback":" direct"} • ${dxy.time}`
+   : dxy.time;
+ document.getElementById("autoSeasonDxyTime").textContent=sourceText;
 }
 async function loadAutoSeasonalityStatus(){
  try{
@@ -910,7 +918,7 @@ async function loadAutoSeasonalityStatus(){
  renderAutoSeasonalityStatus();
 }
 async function refreshAutomaticSeasonality(group){
- const buttonId=group==="core"?"refreshSeasonCore":"refreshSeasonAssets";
+ const buttonId=group==="core"?"refreshSeasonCore":group==="assets"?"refreshSeasonAssets":"refreshSeasonDxy";
  const button=document.getElementById(buttonId);
  const message=document.getElementById("autoSeasonMessage");
  button.disabled=true;
@@ -1037,6 +1045,11 @@ function addSeasonalityMarket(){
  renderSeasonality();
 }
 function seasonalProfile(market){
+ if(market==="USD"){
+  const dxy=seasonalityProfiles.find(x=>x.market==="DXY");
+  const hasDxyHistory=dxy?.months?.some(month=>Number(month.sample_years||0)>0);
+  if(hasDxyHistory)return dxy;
+ }
  return seasonalityProfiles.find(x=>x.market===market);
 }
 function seasonalScore(market,horizon,metric="average_10y"){
@@ -1391,6 +1404,7 @@ document.getElementById("setupDetailSelect").addEventListener("change",renderSet
 document.getElementById("seasonMetric").addEventListener("change",renderSeasonality);
 document.getElementById("refreshSeasonCore").addEventListener("click",()=>refreshAutomaticSeasonality("core"));
 document.getElementById("refreshSeasonAssets").addEventListener("click",()=>refreshAutomaticSeasonality("assets"));
+document.getElementById("refreshSeasonDxy").addEventListener("click",()=>refreshAutomaticSeasonality("dxy"));
 document.getElementById("seasonDetailMarket").addEventListener("change",()=>{renderSeasonCurve();renderSeasonDetail();});
 document.getElementById("applySeasonCell").addEventListener("click",applySeasonCell);
 document.getElementById("alignmentHorizon").addEventListener("change",renderAlignment);
