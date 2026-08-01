@@ -1,38 +1,17 @@
-# Version 7.4 — Economic Calendar and Daily Market Brief
+# Version 7.5 — Currency and Pair Intelligence
 
-## Economic Calendar
+## Added
 
-Works immediately without a paid provider:
-
-- Add dated events manually
-- Cloud storage in PostgreSQL
-- Country and currency
-- High, Medium or Low impact
-- Actual, forecast and previous
-- Automatic affected-market labels
-- Delete manual events
-- Visible across devices
-
-If `TRADING_ECONOMICS_API_KEY` is added later, provider events merge automatically with manual entries.
-
-## Daily Market Brief
-
-Combines:
-
-- COT Commercial / Non-commercial relationships
-- FRED US yields and real yields
-- Free Global Markets regime
-- Financial news importance
-- Economic calendar risk
-
-Displays:
-
-- Market regime
-- Strongest and weakest COT relationships
-- Preferred currency pair for technical review
-- Next high-impact event
-- Evidence summary
-- Explicit “not confirmed” status until TradingView HTF/MTF/LTF alignment
+- Dedicated pages for USD, EUR, GBP, JPY, CHF, CAD, AUD and NZD
+- Daily, weekly, monthly, 6-month and yearly currency scoring
+- COT relationship, seasonality, news, calendar, global regime and rate evidence
+- Confidence based on available evidence
+- Supporting and conflicting evidence displayed separately
+- Relevant news and upcoming events per currency
+- Strongest-versus-weakest pair ranking
+- Configurable top 5, 10 or 15 pairs
+- Full “Why this pair?” breakdown
+- Explicit “Not confirmed” status until TradingView HTF/MTF/LTF alignment
 
 ## Update GitHub
 
@@ -46,4 +25,4 @@ Keep `app/providers/` unchanged.
 
 Commit with:
 
-`Version 7.4 calendar and daily brief`
+`Version 7.5 currency and pair intelligence`
