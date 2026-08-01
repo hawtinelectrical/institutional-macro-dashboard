@@ -146,7 +146,7 @@ footer{text-align:center;color:#7d92aa;padding:18px}
 </section>
 
 <section id="seasonality" class="page">
- <div class="hero"><div class="kicker">SEASONALITY ENGINE</div><h2>Editable Seasonal Heatmap</h2><p>Enter your own monthly percentage tendencies from your chosen source. Data is saved in this browser and can be replaced as your research develops.</p></div>
+ <div class="hero"><div class="kicker">SEASONALITY ENGINE</div><h2>Editable Seasonal Heatmap</h2><p>Enter your own monthly percentage tendencies from your chosen source. Data is saved in the cloud database and is available across your devices.</p></div>
  <div class="controls">
   <button id="addSeasonMarket">Add market</button>
   <button id="saveSeasonality">Save in browser</button>
@@ -323,12 +323,27 @@ function defaultSeasonality(){
  return ["USD","EUR","GBP","JPY","GOLD","SILVER","FTSE100","SP500"].map(m=>({market:m,values:Array(12).fill(0)}));
 }
 let seasonality=[];
-function loadSeasonality(){try{seasonality=JSON.parse(localStorage.getItem("seasonalityV6"))||defaultSeasonality()}catch{seasonality=defaultSeasonality()}}
+async function loadSeasonality(){
+ try{
+  const response=await fetch("/api/seasonality");
+  const payload=await response.json();
+  const rows=Object.entries(payload.markets||{}).map(([market,values])=>({market,values}));
+  seasonality=rows.length?rows:defaultSeasonality();
+ }catch{
+  seasonality=defaultSeasonality();
+ }
+ renderSeasonality();
+}
 function renderSeasonality(){
  document.getElementById("seasonHead").innerHTML="<tr><th>Market</th>"+months.map(m=>`<th>${m}</th>`).join("")+"<th>Delete</th></tr>";
  document.getElementById("seasonBody").innerHTML=seasonality.map((row,ri)=>`<tr><td><input data-ri="${ri}" data-field="market" value="${row.market}"></td>${row.values.map((v,mi)=>`<td class="season-cell ${v>0?"posbg":v<0?"negbg":""}"><input type="number" step="0.1" data-ri="${ri}" data-mi="${mi}" value="${v}"></td>`).join("")}<td><button data-delete="${ri}">X</button></td></tr>`).join("");
  document.querySelectorAll("#seasonBody input").forEach(input=>input.addEventListener("change",e=>{const ri=+e.target.dataset.ri;if(e.target.dataset.field==="market")seasonality[ri].market=e.target.value.toUpperCase();else seasonality[ri].values[+e.target.dataset.mi]=+e.target.value;renderSeasonality()}));
  document.querySelectorAll("[data-delete]").forEach(b=>b.addEventListener("click",()=>{seasonality.splice(+b.dataset.delete,1);renderSeasonality()}));
+}
+async function saveSeasonalityCloud(){
+ const response=await fetch("/api/seasonality",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({markets:seasonality})});
+ if(!response.ok)throw new Error("Could not save seasonality.");
+ alert("Seasonality saved to the cloud database.");
 }
 function seasonalScore(market,horizon){
  const row=seasonality.find(x=>x.market===market);if(!row)return null;
@@ -346,12 +361,12 @@ function renderOutlook(){
  if(macroData.configured){available++;evidence.push(["FRED macro",`Connected`])}
  if(marketsData.configured&&!marketsData.error){available++;evidence.push(["Global markets",`Connected`])}
  const score=Math.round(50+total),bias=score>=60?"Bullish":score<=40?"Bearish":"Neutral",confidence=Math.min(100,Math.round(available/5*100));
- document.getElementById("outlookContent").innerHTML=`<div class="cols"><article class="outlook-card"><h4>${market} — ${activeHorizon}</h4><div class="score">${bias} ${score}/100</div><p>Confidence ${confidence}/100 based on ${available} of 5 planned evidence groups.</p><div class="evidence">${evidence.map(([a,b])=>`<div><span>${a}</span><strong>${b}</strong></div>`).join("")}</div></article><article class="interpretation ${bias.toLowerCase()}"><h4>Outlook explanation</h4><p>${r.explanation}</p><p>${season==null?"No seasonal data has been entered for this market.":`Current seasonal input is ${season>=0?"supportive":"opposing"} at ${season.toFixed(2)}%.`}</p><p>Unconnected factors reduce confidence and are not assigned invented values.</p></article></div>`;
+ document.getElementById("outlookContent").innerHTML=`<div class="cols"><article class="outlook-card"><h4>${market} — ${activeHorizon}</h4><div class="score">${bias} ${score}/100</div><p>Confidence ${confidence}/100 based on ${available} of 5 planned evidence groups.</p><div class="evidence">${evidence.map(([a,b])=>`<div><span>${a}</span><strong>${b}</strong></div>`).join("")}</div></article><article class="interpretation ${bias.toLowerCase()}"><h4>Outlook explanation</h4><p>${r.explanation}</p><p>${season==null?"No seasonal data has been entered for this market.":`Current seasonal input is ${season>=0?"supportive":"opposing"} at ${season.toFixed(2)}%.`}</p><p>This is a directional outlook only. A trade is not confirmed until price and the TradingView structure model agree.</p></article></div>`;
 }
 async function loadAll(){
  try{
-  const [cotRes,newsRes,providersRes,calendarRes,macroRes,marketsRes]=await Promise.all([fetch("/api/cot"),fetch("/api/news"),fetch("/api/providers"),fetch("/api/calendar"),fetch("/api/macro"),fetch("/api/markets")]);
-  cotData=await cotRes.json();const newsPayload=await newsRes.json();newsData=newsPayload.items||[];providerData=await providersRes.json();calendarData=await calendarRes.json();macroData=await macroRes.json();marketsData=await marketsRes.json();
+  const [cotRes,newsRes,providersRes,calendarRes,macroRes]=await Promise.all([fetch("/api/cot"),fetch("/api/news"),fetch("/api/providers"),fetch("/api/calendar"),fetch("/api/macro")]);
+  cotData=await cotRes.json();const newsPayload=await newsRes.json();newsData=newsPayload.items||[];providerData=await providersRes.json();calendarData=await calendarRes.json();macroData=await macroRes.json();marketsData={configured:false,message:"Global index and live metal-price provider connection will be added after the chosen provider is confirmed."};
   document.getElementById("status").textContent="Live CFTC + BBC";document.getElementById("status").className="status live";
   document.getElementById("refreshTime").textContent="Last COT refresh: "+(cotData.last_refresh?.time?new Date(cotData.last_refresh.time).toLocaleString("en-GB"):"—");
   populateSelect("overviewMarket",currencyMarkets);populateSelect("cotMarket",currencyMarkets);populateSelect("metalSelect",metalMarkets);populateSelect("outlookMarket",[...currencyMarkets,...metalMarkets]);
@@ -367,11 +382,11 @@ document.getElementById("reloadNews").addEventListener("click",async()=>{const p
 document.getElementById("refresh").addEventListener("click",async()=>{await fetch("/api/cot/refresh",{method:"POST"});location.reload()});
 numberMode.addEventListener("change",()=>{renderRanking();renderInterpretations();renderCotChart();renderMetals();renderOutlook()});
 document.getElementById("addSeasonMarket").addEventListener("click",()=>{seasonality.push({market:"NEW",values:Array(12).fill(0)});renderSeasonality()});
-document.getElementById("saveSeasonality").addEventListener("click",()=>{localStorage.setItem("seasonalityV6",JSON.stringify(seasonality));alert("Seasonality saved in this browser.")});
+document.getElementById("saveSeasonality").addEventListener("click",saveSeasonalityCloud);
 document.getElementById("resetSeasonality").addEventListener("click",()=>{seasonality=defaultSeasonality();renderSeasonality()});
 document.querySelectorAll(".outlook-tab").forEach(b=>b.addEventListener("click",()=>{document.querySelectorAll(".outlook-tab").forEach(x=>x.classList.remove("active"));b.classList.add("active");activeHorizon=b.dataset.horizon;renderOutlook()}));
 document.getElementById("outlookMarket").addEventListener("change",renderOutlook);
-loadSeasonality();renderSeasonality();loadAll();
+loadSeasonality();loadAll();
 </script>
 </body>
 </html>
