@@ -46,6 +46,20 @@ nav{display:grid;gap:7px}.nav{width:100%;text-align:left;border:1px solid transp
 .check-item.yes{border-color:#28d18b;color:#68edb3}
 .check-item.no{color:#9fb3ca}
 
+
+.heat-cell{min-width:82px;text-align:center;font-weight:900;cursor:pointer}
+.heat-strong-up{background:rgba(40,209,139,.34)!important;color:#8ff6c8}
+.heat-up{background:rgba(40,209,139,.17)!important;color:#68edb3}
+.heat-flat{background:rgba(245,189,78,.10)!important;color:#f5d486}
+.heat-down{background:rgba(242,95,108,.17)!important;color:#ff9aa2}
+.heat-strong-down{background:rgba(242,95,108,.34)!important;color:#ffbdc2}
+.alignment-ring{width:150px;height:150px;border-radius:50%;display:grid;place-items:center;margin:auto;background:conic-gradient(#28d18b calc(var(--score)*1%),#173957 0)}
+.alignment-ring:after{content:"";width:112px;height:112px;border-radius:50%;background:#0d2034;position:absolute}
+.alignment-ring strong{position:relative;z-index:1;font-size:1.8rem}
+.season-editor{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+.season-editor label{display:grid;gap:5px;color:var(--muted)}
+.alignment-bar{display:grid;grid-template-columns:150px 1fr 70px;gap:12px;align-items:center;margin:9px 0}
+
 .message{padding:24px;color:var(--muted);text-align:center}
 footer{text-align:center;color:#7d92aa;padding:18px}
 @media(max-width:1100px){.app{grid-template-columns:1fr}.sidebar{height:auto;position:static}nav{grid-template-columns:repeat(4,1fr)}.nav{text-align:center}.version{display:none}}
@@ -70,10 +84,11 @@ footer{text-align:center;color:#7d92aa;padding:18px}
   <button class="nav" data-page="news">News Intelligence</button>
   <button class="nav" data-page="calendar">Economic Calendar</button>
   <button class="nav" data-page="seasonality">Seasonality</button>
+  <button class="nav" data-page="alignment">Alignment Engine</button>
   <button class="nav" data-page="outlooks">Outlooks</button>
   <button class="nav" data-page="providers">Data Connections</button>
  </nav>
- <div class="version">Version 7.6<br>TradingView Setup Centre</div>
+ <div class="version">Version 8<br>Seasonality & Alignment</div>
 </aside>
 
 <main class="content">
@@ -365,13 +380,109 @@ footer{text-align:center;color:#7d92aa;padding:18px}
 </section>
 
 <section id="seasonality" class="page">
- <div class="hero"><div class="kicker">SEASONALITY ENGINE</div><h2>Editable Seasonal Heatmap</h2><p>Enter your own monthly percentage tendencies from your chosen source. Data is saved in the cloud database and is available across your devices.</p></div>
- <div class="controls">
-  <button id="addSeasonMarket">Add market</button>
-  <button id="saveSeasonality">Save in browser</button>
-  <button id="resetSeasonality">Reset</button>
+ <div class="hero">
+  <div class="kicker">INSTITUTIONAL SEASONALITY ENGINE</div>
+  <h2>Seasonal Heatmap, Curves and Reliability</h2>
+  <p>Enter monthly 5-, 10- and 20-year tendencies, win rates and sample sizes. The dashboard then uses seasonality in currency, pair and alignment scores.</p>
  </div>
- <article class="panel gold"><div class="season-grid"><table class="season-table"><thead id="seasonHead"></thead><tbody id="seasonBody"></tbody></table></div></article>
+
+ <div class="grid4">
+  <article class="metric"><span>Strongest current month</span><strong id="seasonStrongest">—</strong><small id="seasonStrongestValue">—</small></article>
+  <article class="metric"><span>Weakest current month</span><strong id="seasonWeakest">—</strong><small id="seasonWeakestValue">—</small></article>
+  <article class="metric"><span>Highest reliability</span><strong id="seasonReliable">—</strong><small id="seasonReliableValue">—</small></article>
+  <article class="metric"><span>Profiles stored</span><strong id="seasonProfileCount">0</strong><small>Cloud database</small></article>
+ </div>
+
+ <article class="panel gold">
+  <div class="heading">
+   <div><h3>Seasonal heatmap</h3><p>Click a cell to edit that market and month.</p></div>
+   <div class="controls">
+    <select id="seasonMetric">
+     <option value="average_5y">5-year average</option>
+     <option value="average_10y" selected>10-year average</option>
+     <option value="average_20y">20-year average</option>
+     <option value="win_rate">Win rate</option>
+    </select>
+    <button id="addSeasonMarket">Add market</button>
+    <button id="saveSeasonality">Save profiles</button>
+   </div>
+  </div>
+  <div class="season-grid"><table class="season-table"><thead id="seasonHead"></thead><tbody id="seasonBody"></tbody></table></div>
+ </article>
+
+ <div class="cols">
+  <article class="panel blue">
+   <div class="heading">
+    <div><h3>Seasonal curve</h3><p>Compare 5-, 10- and 20-year monthly profiles.</p></div>
+    <select id="seasonDetailMarket"></select>
+   </div>
+   <div id="seasonCurve" class="chart-wrap"></div>
+   <div class="legend">
+    <span class="legend-key"><i class="swatch" style="background:#27d3e4"></i>5Y</span>
+    <span class="legend-key"><i class="swatch" style="background:#28d18b"></i>10Y</span>
+    <span class="legend-key"><i class="swatch" style="background:#9d76ff"></i>20Y</span>
+   </div>
+  </article>
+
+  <article class="panel purple">
+   <div class="heading"><div><h3>Current seasonal outlook</h3><p>Monthly backdrop and longer horizon averages.</p></div></div>
+   <div id="seasonDetail"></div>
+  </article>
+ </div>
+
+ <article class="panel cyan">
+  <div class="heading"><div><h3>Edit selected cell</h3><p>Use the figures from your seasonal map or research source.</p></div></div>
+  <div class="season-editor">
+   <label>Market<input id="seasonEditMarket" readonly></label>
+   <label>Month<input id="seasonEditMonth" readonly></label>
+   <label>5-year average %<input id="seasonEdit5" type="number" step="0.01"></label>
+   <label>10-year average %<input id="seasonEdit10" type="number" step="0.01"></label>
+   <label>20-year average %<input id="seasonEdit20" type="number" step="0.01"></label>
+   <label>Win rate %<input id="seasonEditWin" type="number" min="0" max="100" step="0.1"></label>
+   <label>Sample years<input id="seasonEditYears" type="number" min="0" step="1"></label>
+   <label>Notes<input id="seasonEditNotes"></label>
+  </div>
+  <div class="controls" style="margin-top:12px"><button id="applySeasonCell">Apply to heatmap</button></div>
+ </article>
+</section>
+
+
+<section id="alignment" class="page">
+ <div class="hero">
+  <div class="kicker">INSTITUTIONAL ALIGNMENT ENGINE</div>
+  <h2>Which Markets Have the Strongest Alignment?</h2>
+  <p>COT, seasonality, news, calendar, rates, global risk and TradingView structure are shown as separate transparent components.</p>
+ </div>
+
+ <div class="controls">
+  <label>Horizon
+   <select id="alignmentHorizon">
+    <option>Daily</option><option>Weekly</option><option selected>Monthly</option><option>6-Month</option><option>Yearly</option>
+   </select>
+  </label>
+  <label>Show
+   <select id="alignmentCount"><option>5</option><option selected>10</option><option>15</option></select>
+  </label>
+ </div>
+
+ <div class="cols">
+  <article class="panel green">
+   <div class="heading"><div><h3>Currency alignment</h3><p>Ranked strongest to weakest.</p></div></div>
+   <div id="alignmentCurrencyList"></div>
+  </article>
+  <article class="panel purple">
+   <div class="heading"><div><h3>Pair alignment</h3><p>Strongest evidence difference first.</p></div></div>
+   <div id="alignmentPairList"></div>
+  </article>
+ </div>
+
+ <article class="panel gold">
+  <div class="heading">
+   <div><h3>Selected alignment breakdown</h3><p>Every score component and any conflicting evidence.</p></div>
+   <select id="alignmentPairSelect"></select>
+  </div>
+  <div id="alignmentDetail"></div>
+ </article>
 </section>
 
 <section id="outlooks" class="page">
@@ -743,37 +854,152 @@ function renderMarkets(){
    </div>
   </article>`).join("")||'<div class="message">The free provider returned no supported proxy symbols.</div>';
 }
-function defaultSeasonality(){
- return ["USD","EUR","GBP","JPY","GOLD","SILVER","FTSE100","SP500"].map(m=>({market:m,values:Array(12).fill(0)}));
+function blankSeasonMonth(monthNumber){
+ return {month_number:monthNumber,average_5y:0,average_10y:0,average_20y:0,win_rate:50,sample_years:0,notes:""};
 }
-let seasonality=[];
+function defaultSeasonalityProfiles(){
+ return ["USD","EUR","GBP","JPY","CHF","CAD","AUD","NZD","GOLD","SILVER","FTSE100","SP500"].map(m=>({market:m,months:Array.from({length:12},(_,i)=>blankSeasonMonth(i+1))}));
+}
 async function loadSeasonality(){
  try{
-  const response=await fetch("/api/seasonality");
+  const response=await fetch("/api/seasonality/v2");
   const payload=await response.json();
-  const rows=Object.entries(payload.markets||{}).map(([market,values])=>({market,values}));
-  seasonality=rows.length?rows:defaultSeasonality();
+  seasonalityProfiles=Object.entries(payload.markets||{}).map(([market,months])=>({market,months}));
+  if(!seasonalityProfiles.length)seasonalityProfiles=defaultSeasonalityProfiles();
  }catch{
-  seasonality=defaultSeasonality();
+  seasonalityProfiles=defaultSeasonalityProfiles();
  }
  renderSeasonality();
 }
+function heatClass(value,metric){
+ if(metric==="win_rate"){
+  if(value>=65)return"heat-strong-up";if(value>=55)return"heat-up";if(value<=35)return"heat-strong-down";if(value<=45)return"heat-down";return"heat-flat";
+ }
+ if(value>=1.5)return"heat-strong-up";if(value>0.2)return"heat-up";if(value<=-1.5)return"heat-strong-down";if(value<-0.2)return"heat-down";return"heat-flat";
+}
+function seasonMetricValue(monthRow,metric){
+ return Number(monthRow?.[metric]||0);
+}
+function reliabilityForMonth(monthRow){
+ const win=Number(monthRow?.win_rate||0),years=Number(monthRow?.sample_years||0);
+ return Math.max(0,Math.min(100,Math.round(Math.abs(win-50)*1.5+Math.min(30,years*1.5))));
+}
 function renderSeasonality(){
- document.getElementById("seasonHead").innerHTML="<tr><th>Market</th>"+months.map(m=>`<th>${m}</th>`).join("")+"<th>Delete</th></tr>";
- document.getElementById("seasonBody").innerHTML=seasonality.map((row,ri)=>`<tr><td><input data-ri="${ri}" data-field="market" value="${row.market}"></td>${row.values.map((v,mi)=>`<td class="season-cell ${v>0?"posbg":v<0?"negbg":""}"><input type="number" step="0.1" data-ri="${ri}" data-mi="${mi}" value="${v}"></td>`).join("")}<td><button data-delete="${ri}">X</button></td></tr>`).join("");
- document.querySelectorAll("#seasonBody input").forEach(input=>input.addEventListener("change",e=>{const ri=+e.target.dataset.ri;if(e.target.dataset.field==="market")seasonality[ri].market=e.target.value.toUpperCase();else seasonality[ri].values[+e.target.dataset.mi]=+e.target.value;renderSeasonality()}));
- document.querySelectorAll("[data-delete]").forEach(b=>b.addEventListener("click",()=>{seasonality.splice(+b.dataset.delete,1);renderSeasonality()}));
+ const metric=document.getElementById("seasonMetric")?.value||"average_10y";
+ document.getElementById("seasonHead").innerHTML="<tr><th>Market</th>"+months.map(m=>`<th>${m}</th>`).join("")+"</tr>";
+ document.getElementById("seasonBody").innerHTML=seasonalityProfiles.map(row=>`<tr><td><strong>${row.market}</strong></td>${row.months.map((monthRow,mi)=>{
+  const value=seasonMetricValue(monthRow,metric);
+  const display=metric==="win_rate"?`${value.toFixed(0)}%`:`${value>0?"+":""}${value.toFixed(2)}%`;
+  return `<td class="heat-cell ${heatClass(value,metric)}" data-season-market="${row.market}" data-season-month="${mi}">${display}</td>`;
+ }).join("")}</tr>`).join("");
+
+ document.querySelectorAll("[data-season-market]").forEach(cell=>cell.addEventListener("click",()=>{
+  selectSeasonCell(cell.dataset.seasonMarket,Number(cell.dataset.seasonMonth));
+ }));
+
+ const currentMonth=new Date().getMonth();
+ const ranked=seasonalityProfiles.map(row=>{
+  const month=row.months[currentMonth]||blankSeasonMonth(currentMonth+1);
+  return {market:row.market,value:seasonMetricValue(month,metric==="win_rate"?"average_10y":metric),reliability:reliabilityForMonth(month),win:month.win_rate};
+ }).sort((a,b)=>b.value-a.value);
+ document.getElementById("seasonStrongest").textContent=ranked[0]?.market||"—";
+ document.getElementById("seasonStrongestValue").textContent=ranked[0]?`${ranked[0].value>0?"+":""}${ranked[0].value.toFixed(2)}%`:"—";
+ document.getElementById("seasonWeakest").textContent=ranked.at(-1)?.market||"—";
+ document.getElementById("seasonWeakestValue").textContent=ranked.length?`${ranked.at(-1).value>0?"+":""}${ranked.at(-1).value.toFixed(2)}%`:"—";
+ const reliable=[...ranked].sort((a,b)=>b.reliability-a.reliability)[0];
+ document.getElementById("seasonReliable").textContent=reliable?.market||"—";
+ document.getElementById("seasonReliableValue").textContent=reliable?`${reliable.reliability}/100 reliability`:"—";
+ document.getElementById("seasonProfileCount").textContent=seasonalityProfiles.length;
+
+ const detail=document.getElementById("seasonDetailMarket");
+ const previous=detail.value;
+ detail.innerHTML=seasonalityProfiles.map(row=>`<option value="${row.market}">${row.market}</option>`).join("");
+ if(seasonalityProfiles.some(row=>row.market===previous))detail.value=previous;
+ if(!selectedSeasonCell.market&&seasonalityProfiles.length)selectSeasonCell(seasonalityProfiles[0].market,currentMonth,false);
+ renderSeasonCurve();
+ renderSeasonDetail();
+}
+function selectSeasonCell(market,monthIndex,rerender=true){
+ selectedSeasonCell={market,monthIndex};
+ const row=seasonalityProfiles.find(x=>x.market===market);
+ const month=row?.months?.[monthIndex]||blankSeasonMonth(monthIndex+1);
+ document.getElementById("seasonEditMarket").value=market;
+ document.getElementById("seasonEditMonth").value=months[monthIndex];
+ document.getElementById("seasonEdit5").value=month.average_5y;
+ document.getElementById("seasonEdit10").value=month.average_10y;
+ document.getElementById("seasonEdit20").value=month.average_20y;
+ document.getElementById("seasonEditWin").value=month.win_rate;
+ document.getElementById("seasonEditYears").value=month.sample_years;
+ document.getElementById("seasonEditNotes").value=month.notes||"";
+ if(rerender){
+  document.getElementById("seasonDetailMarket").value=market;
+  renderSeasonCurve();renderSeasonDetail();
+ }
+}
+function applySeasonCell(){
+ const row=seasonalityProfiles.find(x=>x.market===selectedSeasonCell.market);
+ if(!row)return;
+ const month=row.months[selectedSeasonCell.monthIndex];
+ month.average_5y=Number(document.getElementById("seasonEdit5").value||0);
+ month.average_10y=Number(document.getElementById("seasonEdit10").value||0);
+ month.average_20y=Number(document.getElementById("seasonEdit20").value||0);
+ month.win_rate=Math.max(0,Math.min(100,Number(document.getElementById("seasonEditWin").value||0)));
+ month.sample_years=Math.max(0,Number(document.getElementById("seasonEditYears").value||0));
+ month.notes=document.getElementById("seasonEditNotes").value;
+ renderSeasonality();
 }
 async function saveSeasonalityCloud(){
- const response=await fetch("/api/seasonality",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({markets:seasonality})});
- if(!response.ok)throw new Error("Could not save seasonality.");
- alert("Seasonality saved to the cloud database.");
+ const response=await fetch("/api/seasonality/v2",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({markets:seasonalityProfiles})});
+ if(!response.ok)throw new Error("Could not save seasonality profiles.");
+ alert("Seasonality profiles saved to the cloud database.");
 }
-function seasonalScore(market,horizon){
- const row=seasonality.find(x=>x.market===market);if(!row)return null;
- const month=new Date().getMonth(),current=row.values[month]||0;
- if(horizon==="Daily"||horizon==="Weekly"||horizon==="Monthly")return current;
- const next=horizon==="6-Month"?6:12;let total=0;for(let i=0;i<next;i++)total+=row.values[(month+i)%12]||0;return total/next;
+function addSeasonalityMarket(){
+ const market=prompt("Enter the market or pair, for example EURUSD or GOLD:");
+ if(!market)return;
+ const normalised=market.toUpperCase().replace(/\s+/g,"");
+ if(seasonalityProfiles.some(row=>row.market===normalised)){alert("That market already exists.");return}
+ seasonalityProfiles.push({market:normalised,months:Array.from({length:12},(_,i)=>blankSeasonMonth(i+1))});
+ renderSeasonality();
+}
+function seasonalProfile(market){
+ return seasonalityProfiles.find(x=>x.market===market);
+}
+function seasonalScore(market,horizon,metric="average_10y"){
+ const row=seasonalProfile(market);if(!row)return null;
+ const month=new Date().getMonth();
+ const current=seasonMetricValue(row.months[month],metric);
+ if(["Daily","Weekly","Monthly"].includes(horizon))return current;
+ const count=horizon==="6-Month"?6:12;
+ const values=Array.from({length:count},(_,i)=>seasonMetricValue(row.months[(month+i)%12],metric));
+ return values.reduce((a,b)=>a+b,0)/values.length;
+}
+function seasonalReliability(market){
+ const row=seasonalProfile(market);if(!row)return 0;
+ return reliabilityForMonth(row.months[new Date().getMonth()]);
+}
+function renderSeasonCurve(){
+ const market=document.getElementById("seasonDetailMarket").value;
+ const row=seasonalProfile(market),target=document.getElementById("seasonCurve");
+ if(!row){target.innerHTML='<div class="message">No seasonality profile.</div>';return}
+ const width=760,height=290,pad=42;
+ const all=row.months.flatMap(m=>[m.average_5y,m.average_10y,m.average_20y]);
+ const min=Math.min(...all,0),max=Math.max(...all,0);
+ const x=i=>pad+i*(width-pad*2)/11;
+ const y=v=>height-pad-(v-min)/(max-min||1)*(height-pad*2);
+ const line=(field,colour)=>`<polyline style="fill:none;stroke:${colour};stroke-width:3" points="${row.months.map((m,i)=>`${x(i)},${y(m[field])}`).join(" ")}"/>`;
+ const labels=months.map((m,i)=>`<text x="${x(i)}" y="${height-8}" text-anchor="middle" fill="#8fa5bb" font-size="10">${m}</text>`).join("");
+ target.innerHTML=`<svg viewBox="0 0 ${width} ${height}"><line class="axis" x1="${pad}" y1="${y(0)}" x2="${width-pad}" y2="${y(0)}"/>${line("average_5y","#27d3e4")}${line("average_10y","#28d18b")}${line("average_20y","#9d76ff")}${labels}</svg>`;
+}
+function renderSeasonDetail(){
+ const market=document.getElementById("seasonDetailMarket").value,row=seasonalProfile(market);
+ if(!row){document.getElementById("seasonDetail").innerHTML='<div class="message">No profile.</div>';return}
+ const monthIndex=new Date().getMonth(),current=row.months[monthIndex],reliability=reliabilityForMonth(current);
+ const six=seasonalScore(market,"6-Month"),year=seasonalScore(market,"Yearly");
+ document.getElementById("seasonDetail").innerHTML=`<div class="grid3">
+  <div class="metric"><span>${months[monthIndex]} 10Y</span><strong>${current.average_10y>0?"+":""}${Number(current.average_10y).toFixed(2)}%</strong><small>${current.win_rate}% win rate</small></div>
+  <div class="metric"><span>Next 6 months</span><strong>${six>0?"+":""}${six.toFixed(2)}%</strong><small>Average monthly tendency</small></div>
+  <div class="metric"><span>Yearly cycle</span><strong>${year>0?"+":""}${year.toFixed(2)}%</strong><small>Average monthly tendency</small></div>
+ </div><div class="interpretation ${current.average_10y>0?"bullish":current.average_10y<0?"bearish":"neutral"}"><h4>Reliability ${reliability}/100</h4><p>5Y ${Number(current.average_5y).toFixed(2)}% • 10Y ${Number(current.average_10y).toFixed(2)}% • 20Y ${Number(current.average_20y).toFixed(2)}%</p><p>Sample: ${current.sample_years||0} years. ${current.notes||"No notes entered."}</p><p>Daily and weekly outlooks use this current monthly backdrop; they are not presented as separate daily historical studies.</p></div>`;
 }
 function renderOutlook(){
  const market=document.getElementById("outlookMarket").value,r=relationship(market),season=seasonalScore(market,activeHorizon);
@@ -809,8 +1035,14 @@ function currencyEvidenceScore(market,horizon){
  evidence.push({name:"COT relationship",value:r.bias,points:Math.round(cotContribution),available:true});
 
  const season=seasonalScore(market,horizon);
- if(season!=null){available++;const pts=Math.max(-15,Math.min(15,season*3));score+=pts;evidence.push({name:"Seasonality",value:`${season>=0?"Bullish":"Bearish"} ${season.toFixed(2)}%`,points:Math.round(pts),available:true});}
- else evidence.push({name:"Seasonality",value:"Not entered",points:0,available:false});
+ if(season!=null){
+  available++;
+  const reliability=seasonalReliability(market);
+  const scaled=season*3*(0.5+reliability/200);
+  const pts=Math.max(-18,Math.min(18,scaled));
+  score+=pts;
+  evidence.push({name:"Seasonality",value:`${season>=0?"Bullish":"Bearish"} ${season.toFixed(2)}% • reliability ${reliability}/100`,points:Math.round(pts),available:true});
+ } else evidence.push({name:"Seasonality",value:"Not entered",points:0,available:false});
 
  const relevantNews=newsData.filter(n=>(n.affected_markets||[]).includes(market));
  if(relevantNews.length){available++;const high=relevantNews.filter(n=>["Critical","High"].includes(n.importance||n.impact)).length;evidence.push({name:"Financial news",value:`${relevantNews.length} stories, ${high} high importance`,points:0,available:true});}
@@ -884,6 +1116,50 @@ function renderPairDetail(){
 }
 
 
+
+function technicalForPair(pair){
+ return setupData.find(row=>row.pair===pair)||null;
+}
+function alignmentCurrencyRows(horizon){
+ return currencyMarkets.map(m=>currencyEvidenceScore(m,horizon)).sort((a,b)=>b.score-a.score);
+}
+function alignmentPairRows(horizon){
+ return pairRankings(horizon).map(row=>{
+  const technical=technicalForPair(row.pair);
+  const macroScore=Math.max(0,Math.min(100,50+row.gap/2));
+  const technicalScore=technical?.technical_score??null;
+  const combined=technicalScore==null?macroScore:Math.round(macroScore*0.55+technicalScore*0.45);
+  const status=technical?.status==="Invalidated"?"Invalidated":technical?.status==="Ready"&&combined>=70?"Trade Ready":technical?"Watch":"Macro Only";
+  return {...row,macroScore,technicalScore,combined,status,technical};
+ }).sort((a,b)=>b.combined-a.combined);
+}
+function renderAlignment(){
+ const horizon=document.getElementById("alignmentHorizon").value,count=Number(document.getElementById("alignmentCount").value);
+ const currencies=alignmentCurrencyRows(horizon).slice(0,count);
+ document.getElementById("alignmentCurrencyList").innerHTML=currencies.map(row=>`<div class="alignment-bar"><strong>${row.market}</strong><div class="track"><div class="fill" style="width:${row.score}%"></div></div><span class="rank-score">${row.score}</span></div>`).join("");
+
+ const pairs=alignmentPairRows(horizon).slice(0,count);
+ document.getElementById("alignmentPairList").innerHTML=pairs.map((row,i)=>`<div class="provider"><span>#${i+1} ${row.pair}<br><small>${row.base.bias} vs ${row.quote.bias}</small></span><strong>${row.combined}/100 • ${row.status}</strong></div>`).join("");
+ const select=document.getElementById("alignmentPairSelect"),previous=select.value;
+ select.innerHTML=pairs.map(row=>`<option value="${row.pair}">${row.pair} — ${row.combined}</option>`).join("");
+ if(pairs.some(row=>row.pair===previous))select.value=previous;
+ renderAlignmentDetail();
+}
+function renderAlignmentDetail(){
+ const horizon=document.getElementById("alignmentHorizon").value,pair=document.getElementById("alignmentPairSelect").value;
+ const row=alignmentPairRows(horizon).find(x=>x.pair===pair),target=document.getElementById("alignmentDetail");
+ if(!row){target.innerHTML='<div class="message">No pair selected.</div>';return}
+ const stronger=row.base,weaker=row.quote,technical=row.technical;
+ const conflict=[...stronger.evidence.filter(e=>e.points<0).map(e=>`${stronger.market}: ${e.name}`),...weaker.evidence.filter(e=>e.points>0).map(e=>`${weaker.market}: ${e.name}`)];
+ target.innerHTML=`<div class="cols">
+  <div class="outlook-card"><div class="alignment-ring" style="--score:${row.combined};position:relative"><strong>${row.combined}</strong></div><h3 style="text-align:center">${row.pair} — ${row.status}</h3><p style="text-align:center">Macro ${row.macroScore}/100 • Technical ${row.technicalScore??"Not entered"}</p></div>
+  <div class="interpretation ${row.status==="Trade Ready"?"bullish":row.status==="Invalidated"?"bearish":"neutral"}"><h4>Alignment status</h4><p>${row.status==="Trade Ready"?"Macro evidence and the saved TradingView checklist are strongly aligned. Review live price, event risk and risk management before acting.":row.status==="Macro Only"?"The macro ranking is available, but no TradingView setup has been entered.":"The setup is being monitored but is not fully aligned."}</p><p><strong>Conflicting evidence:</strong> ${conflict.length?conflict.join(", "):"No scored conflicts currently detected."}</p></div>
+ </div>
+ <div class="cols">
+  <div class="outlook-card"><h4>Stronger: ${stronger.market} ${stronger.score}/100</h4><div class="evidence">${stronger.evidence.map(e=>`<div><span>${e.name}</span><strong>${e.points>0?"+":""}${e.points} • ${e.value}</strong></div>`).join("")}</div></div>
+  <div class="outlook-card"><h4>Weaker: ${weaker.market} ${weaker.score}/100</h4><div class="evidence">${weaker.evidence.map(e=>`<div><span>${e.name}</span><strong>${e.points>0?"+":""}${e.points} • ${e.value}</strong></div>`).join("")}</div></div>
+ </div>`;
+}
 function setupStatusClass(status){
  return status==="Ready"?"ready":status==="Watch"?"watch":status==="Invalidated"?"invalidated":"not-ready";
 }
@@ -1012,7 +1288,7 @@ async function loadAll(){
   document.getElementById("refreshTime").textContent="Last COT refresh: "+(cotData.last_refresh?.time?new Date(cotData.last_refresh.time).toLocaleString("en-GB"):"—");
   populateSelect("overviewMarket",currencyMarkets);populateSelect("cotMarket",currencyMarkets);populateSelect("metalSelect",metalMarkets);populateSelect("outlookMarket",[...currencyMarkets,...metalMarkets]);populateSelect("currencyIntelSelect",currencyMarkets);
   const nm=document.getElementById("newsMarket");nm.innerHTML='<option value="All">All</option>'+[...currencyMarkets,...metalMarkets,"GLOBAL"].map(x=>`<option>${x}</option>`).join("");populateNewsFilters();
-  renderRanking();renderInterpretations();renderCotChart();renderMetals();renderNews();renderCalendar();renderProviders();renderMarkets();renderFred();renderBrief();renderOutlook();renderCurrencyIntelligence();renderPairRankings();renderSetups();
+  renderRanking();renderInterpretations();renderCotChart();renderMetals();renderNews();renderCalendar();renderProviders();renderMarkets();renderFred();renderBrief();renderOutlook();renderCurrencyIntelligence();renderPairRankings();renderSetups();renderAlignment();
  }catch(error){document.getElementById("status").textContent="Load error";document.getElementById("status").className="status error";console.error(error)}
 }
 document.getElementById("overviewMarket").addEventListener("change",renderInterpretations);
@@ -1022,9 +1298,8 @@ document.getElementById("metalSelect").addEventListener("change",renderMetals);
 document.getElementById("reloadNews").addEventListener("click",async()=>{const p=await (await fetch("/api/news")).json();newsMeta=p.data||p;newsData=newsMeta.items||[];populateNewsFilters();renderNews()});
 document.getElementById("refresh").addEventListener("click",async()=>{await fetch("/api/cot/refresh",{method:"POST"});location.reload()});
 numberMode.addEventListener("change",()=>{renderRanking();renderInterpretations();renderCotChart();renderMetals();renderOutlook()});
-document.getElementById("addSeasonMarket").addEventListener("click",()=>{seasonality.push({market:"NEW",values:Array(12).fill(0)});renderSeasonality()});
+document.getElementById("addSeasonMarket").addEventListener("click",addSeasonalityMarket);
 document.getElementById("saveSeasonality").addEventListener("click",saveSeasonalityCloud);
-document.getElementById("resetSeasonality").addEventListener("click",()=>{seasonality=defaultSeasonality();renderSeasonality()});
 document.querySelectorAll(".outlook-tab").forEach(b=>b.addEventListener("click",()=>{document.querySelectorAll(".outlook-tab").forEach(x=>x.classList.remove("active"));b.classList.add("active");activeHorizon=b.dataset.horizon;renderOutlook()}));
 document.getElementById("outlookMarket").addEventListener("change",renderOutlook);
 document.getElementById("fredSeriesSelect").addEventListener("change",renderFredChart);
@@ -1038,6 +1313,12 @@ document.getElementById("saveSetup").addEventListener("click",saveSetup);
 document.getElementById("loadTopPair").addEventListener("click",loadTopPair);
 document.getElementById("setupStatusFilter").addEventListener("change",renderSetups);
 document.getElementById("setupDetailSelect").addEventListener("change",renderSetupDetail);
+document.getElementById("seasonMetric").addEventListener("change",renderSeasonality);
+document.getElementById("seasonDetailMarket").addEventListener("change",()=>{renderSeasonCurve();renderSeasonDetail();});
+document.getElementById("applySeasonCell").addEventListener("click",applySeasonCell);
+document.getElementById("alignmentHorizon").addEventListener("change",renderAlignment);
+document.getElementById("alignmentCount").addEventListener("change",renderAlignment);
+document.getElementById("alignmentPairSelect").addEventListener("change",renderAlignmentDetail);
 loadSeasonality();loadAll();
 </script>
 </body>
