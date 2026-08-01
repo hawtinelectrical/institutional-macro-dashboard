@@ -1,0 +1,22 @@
+services:
+  - type: web
+    name: institutional-macro-dashboard
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: python -m uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.13.5
+      - key: DATABASE_URL
+        fromDatabase:
+          name: institutional-macro-db
+          property: connectionString
+
+databases:
+  - name: institutional-macro-db
+    plan: free
+    region: oregon
+    postgresMajorVersion: "17"

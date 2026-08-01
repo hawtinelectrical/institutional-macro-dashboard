@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Institutional Macro Dashboard</title>
+<style>
+*{box-sizing:border-box}
+:root{--bg:#06111d;--panel:#10243b;--panel2:#142f4d;--line:#31577e;--text:#f7fbff;--muted:#a6b8cc;--green:#24cf88;--red:#f15f6c;--blue:#2f8fff}
+body{margin:0;font-family:Segoe UI,Arial,sans-serif;color:var(--text);background:radial-gradient(circle at 0 0,rgba(47,143,255,.18),transparent 25%),var(--bg)}
+main{max-width:1700px;margin:auto;padding:24px}
+.hero,.panel,.metric{border:1px solid var(--line);border-radius:17px;background:linear-gradient(180deg,var(--panel2),var(--panel))}
+.hero{padding:25px;margin-bottom:16px;background:linear-gradient(120deg,#143e68,#111f39 60%,#38255d)}
+.hero h1{margin:5px 0}.hero p{color:#d0dbea}.kicker{color:#88dcff;letter-spacing:.15em;font-weight:800;font-size:.78rem}
+.statusbar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:15px 0}
+.status,button,select{padding:10px 13px;border:1px solid #4c749b;border-radius:9px;background:#153451;color:white;font-weight:700}
+.live{border-color:var(--green)}.error{border-color:var(--red)}button{cursor:pointer}
+.summary{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:16px}
+.metric{padding:17px}.metric span,.metric small{color:var(--muted);display:block}.metric strong{font-size:1.55rem;display:block;margin:8px 0}
+.panel{padding:19px}.table-wrap{overflow:auto;border:1px solid var(--line);border-radius:13px}
+table{border-collapse:separate;border-spacing:0;width:100%;min-width:1500px;background:#0d2034}
+th,td{padding:11px 9px;border-right:1px solid #294863;border-bottom:1px solid #294863;text-align:right;white-space:nowrap}
+thead th{position:sticky;top:0;background:#173e68;z-index:2}
+th:first-child,td:first-child{position:sticky;left:0;background:#112b45;text-align:left;z-index:1}
+thead th:first-child{z-index:3;background:#173e68}
+.comm td:not(:first-child){background:rgba(36,207,136,.06)}
+.noncomm td:not(:first-child){background:rgba(241,95,108,.06)}
+.pos{color:#62e8ad;font-weight:800}.neg{color:#ff8c95;font-weight:800}
+.delta{display:block;font-size:.75rem;color:#90a5ba;margin-top:3px}
+.gap td{padding:0;height:7px;background:#07131f}
+.message{padding:20px;color:var(--muted);text-align:center}
+@media(max-width:850px){.summary{grid-template-columns:1fr 1fr}}
+@media(max-width:480px){main{padding:12px}.summary{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<main>
+<section class="hero">
+<div class="kicker">CLOUD EDITION V3</div>
+<h1>Institutional Positioning Centre</h1>
+<p>Live CFTC Legacy Futures Only • Commercial and Non-commercial • Non-reportables excluded</p>
+</section>
+
+<div class="statusbar">
+<span id="status" class="status">Connecting…</span>
+<span id="refreshTime" class="status">Last refresh: —</span>
+<button id="refresh">Refresh now</button>
+<select id="mode">
+<option value="full">Full contracts</option>
+<option value="compact">Compact (K)</option>
+</select>
+</div>
+
+<section class="summary">
+<article class="metric"><span>Strongest Commercial</span><strong id="sc">—</strong><small>Latest net position</small></article>
+<article class="metric"><span>Weakest Commercial</span><strong id="wc">—</strong><small>Latest net position</small></article>
+<article class="metric"><span>Strongest Non-commercial</span><strong id="sn">—</strong><small>Latest net position</small></article>
+<article class="metric"><span>Weakest Non-commercial</span><strong id="wn">—</strong><small>Latest net position</small></article>
+</section>
+
+<section class="panel">
+<div id="message" class="message">Loading the latest CFTC reports…</div>
+<div class="table-wrap">
+<table>
+<thead id="head"></thead>
+<tbody id="body"></tbody>
+</table>
+</div>
+</section>
+</main>
+
+<script>
+let data=null;
+const mode=document.getElementById("mode");
+const fmt=v=>v==null?"—":mode.value==="compact"?(v/1000).toFixed(1)+"K":Number(v).toLocaleString("en-GB");
+const cl=v=>Number(v)>=0?"pos":"neg";
+
+function dates(){
+  const values=new Set();
+  Object.values(data.currencies).forEach(rows=>rows.forEach(row=>values.add(row.report_date)));
+  return [...values].sort().slice(-10);
+}
+
+function summaries(){
+  const rows=Object.entries(data.currencies)
+    .filter(([,series])=>series.length)
+    .map(([currency,series])=>({currency,row:series.at(-1)}));
+
+  const commercial=[...rows].sort((a,b)=>b.row.commercial_net-a.row.commercial_net);
+  const noncommercial=[...rows].sort((a,b)=>b.row.noncommercial_net-a.row.noncommercial_net);
+
+  document.getElementById("sc").textContent=commercial[0].currency+" "+fmt(commercial[0].row.commercial_net);
+  document.getElementById("wc").textContent=commercial.at(-1).currency+" "+fmt(commercial.at(-1).row.commercial_net);
+  document.getElementById("sn").textContent=noncommercial[0].currency+" "+fmt(noncommercial[0].row.noncommercial_net);
+  document.getElementById("wn").textContent=noncommercial.at(-1).currency+" "+fmt(noncommercial.at(-1).row.noncommercial_net);
+}
+
+function render(){
+  const reportDates=dates();
+  document.getElementById("head").innerHTML=
+    "<tr><th>Currency / Group</th>"+
+    reportDates.map(date=>`<th>${date}</th>`).join("")+
+    "<th>10W change</th></tr>";
+
+  const body=document.getElementById("body");
+  body.innerHTML="";
+
+  Object.entries(data.currencies).forEach(([currency,rows],index)=>{
+    const map=Object.fromEntries(rows.map(row=>[row.report_date,row]));
+
+    [
+      ["commercial_net","Commercial","comm"],
+      ["noncommercial_net","Non-commercial","noncomm"]
+    ].forEach(([field,label,rowClass])=>{
+      let html=`<td><strong>${currency}</strong><span class="delta">${label}</span></td>`;
+
+      reportDates.forEach((reportDate,dateIndex)=>{
+        const value=map[reportDate]?.[field];
+        const previous=dateIndex ? map[reportDates[dateIndex-1]]?.[field] : null;
+        const change=value!=null && previous!=null ? value-previous : null;
+
+        html+=`<td><span class="${value==null?"":cl(value)}">${fmt(value)}</span>`+
+          `${change==null?"":`<span class="delta">Δ ${fmt(change)}</span>`}</td>`;
+      });
+
+      const values=reportDates.map(date=>map[date]?.[field]).filter(value=>value!=null);
+      const totalChange=values.length>1 ? values.at(-1)-values[0] : null;
+      html+=`<td><span class="${totalChange==null?"":cl(totalChange)}">${fmt(totalChange)}</span></td>`;
+
+      const row=document.createElement("tr");
+      row.className=rowClass;
+      row.innerHTML=html;
+      body.appendChild(row);
+    });
+
+    if(index<Object.keys(data.currencies).length-1){
+      const gap=document.createElement("tr");
+      gap.className="gap";
+      gap.innerHTML=`<td colspan="${reportDates.length+2}"></td>`;
+      body.appendChild(gap);
+    }
+  });
+
+  summaries();
+}
+
+async function load(){
+  const status=document.getElementById("status");
+  const message=document.getElementById("message");
+
+  try{
+    const response=await fetch("/api/cot");
+    if(!response.ok){
+      const detail=await response.json();
+      throw new Error(detail.detail || "Data unavailable");
+    }
+
+    data=await response.json();
+    message.style.display="none";
+    status.textContent="Live CFTC data";
+    status.className="status live";
+    document.getElementById("refreshTime").textContent=
+      "Last refresh: "+(data.last_refresh || "—");
+    render();
+  }catch(error){
+    status.textContent="Warming up";
+    status.className="status error";
+    message.style.display="block";
+    message.textContent=error.message+" Refresh the page in a minute.";
+  }
+}
+
+document.getElementById("refresh").addEventListener("click",async()=>{
+  const button=document.getElementById("refresh");
+  button.disabled=true;
+  button.textContent="Refreshing…";
+  try{
+    await fetch("/api/cot/refresh",{method:"POST"});
+    await load();
+  }finally{
+    button.disabled=false;
+    button.textContent="Refresh now";
+  }
+});
+
+mode.addEventListener("change",()=>data && render());
+load();
+</script>
+</body>
+</html>
