@@ -1,44 +1,24 @@
-# Version 8.2 — Dollar Index and Automatic Seasonality
+# Version 8.3 — Current Month Highlight
 
-## Dedicated Dollar Index module
+## Added to the seasonality heatmap
 
-The automatic seasonality engine now has a separate Dollar Index refresh group.
+- Current month column highlighted from header to bottom
+- Yellow border around the complete current-month column
+- “CURRENT MONTH” label above the active month
+- Subtle glow without hiding positive or negative heatmap colours
+- Current-month legend key
 
-It tries the provider symbols in this order:
+## Added to the seasonal curve
 
-1. `DXY`
-2. `DXY:ICE`
-3. `UUP` as a transparent ETF fallback
+- Shaded vertical current-month band
+- Yellow vertical reference line
+- Current month label above the chart
+- Highlighted 5Y, 10Y and 20Y curve markers
+- Marker rings for easier chart scanning
+- Current-month caption below the chart
 
-The selected source is stored in the seasonality notes and displayed on the
-dashboard. UUP is never presented as the official DXY index.
-
-## USD integration
-
-When a DXY profile with real historical observations exists, the dashboard
-uses DXY as the preferred seasonal input for USD scoring. The older UUP-based
-USD profile remains available as a fallback.
-
-## Calculations
-
-For DXY, the dashboard calculates:
-
-- 5-year monthly average return
-- 10-year monthly average return
-- 20-year monthly average return
-- monthly win rate
-- sample years
-- reliability
-- seasonal curve
-- current-month, six-month and yearly tendency
-
-## Refresh schedule
-
-- Currencies: first day of each month at 03:10 UTC
-- Assets: first day of each month at 03:20 UTC
-- Dollar Index: first day of each month at 03:30 UTC
-
-Leave at least one minute between manual refresh buttons on the free plan.
+The highlighted month is calculated automatically from the browser date, so it
+moves to the next column when the calendar month changes.
 
 ## Update GitHub
 
@@ -52,4 +32,4 @@ Keep the existing `app/providers/` folder.
 
 Commit with:
 
-`Version 8.2 Dollar Index`
+`Version 8.3 current month highlight`
