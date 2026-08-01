@@ -1,40 +1,49 @@
-# Version 7.3 — News Intelligence
+# Version 7.4 — Economic Calendar and Daily Market Brief
 
-## Live news sources
+## Economic Calendar
 
-- BBC Business — financially filtered
-- Federal Reserve press releases
-- ECB press releases
-- ECB speeches
-- Bank of England news
-- U.S. Bureau of Labor Statistics latest releases
+Works immediately without a paid provider:
 
-## Added
+- Add dated events manually
+- Cloud storage in PostgreSQL
+- Country and currency
+- High, Medium or Low impact
+- Actual, forecast and previous
+- Automatic affected-market labels
+- Delete manual events
+- Visible across devices
 
-- RSS and Atom feed support
-- Independent source-failure handling
-- Source health dashboard
-- Critical / High / Medium / Low importance
-- Source, category and market filters
-- Countries, affected markets and likely effects
-- “What Changed Today?” summary
-- High-importance headline shortlist
-- Duplicate-title removal
-- Up to 140 financially classified stories
+If `TRADING_ECONOMICS_API_KEY` is added later, provider events merge automatically with manual entries.
 
-## Reuters
+## Daily Market Brief
 
-Reuters is not included because a reliable public RSS/API feed with suitable reuse rights is not available for this implementation. It can be added later through a licensed provider.
+Combines:
+
+- COT Commercial / Non-commercial relationships
+- FRED US yields and real yields
+- Free Global Markets regime
+- Financial news importance
+- Economic calendar risk
+
+Displays:
+
+- Market regime
+- Strongest and weakest COT relationships
+- Preferred currency pair for technical review
+- Next high-impact event
+- Evidence summary
+- Explicit “not confirmed” status until TradingView HTF/MTF/LTF alignment
 
 ## Update GitHub
 
 Replace:
 
-- `app/providers/official_news.py`
 - `app/main.py`
 - `app/static/index.html`
 - `README.md`
 
+Keep `app/providers/` unchanged.
+
 Commit with:
 
-`Version 7.3 news intelligence`
+`Version 7.4 calendar and daily brief`
