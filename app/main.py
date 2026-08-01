@@ -1194,7 +1194,7 @@ async def lifespan(_: FastAPI):
     scheduler.shutdown(wait=False)
 
 
-app = FastAPI(title="Institutional Market Intelligence Terminal v7.4 Calendar and Daily Brief", lifespan=lifespan)
+app = FastAPI(title="Institutional Market Intelligence Terminal v7.5 Currency and Pair Intelligence", lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
