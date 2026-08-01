@@ -58,7 +58,7 @@ footer{text-align:center;color:#7d92aa;padding:18px}
   <button class="nav" data-page="outlooks">Outlooks</button>
   <button class="nav" data-page="providers">Data Connections</button>
  </nav>
- <div class="version">Version 7.2<br>FRED Bonds & Rates</div>
+ <div class="version">Version 7.3<br>News Intelligence</div>
 </aside>
 
 <main class="content">
@@ -190,12 +190,27 @@ footer{text-align:center;color:#7d92aa;padding:18px}
 
 <section id="news" class="page">
  <div class="hero"><div class="kicker">NEWS INTELLIGENCE</div><h2>Multi-source News Feed</h2><p>BBC Business, World and UK are live. Additional licensed sources can be connected later without changing the interface.</p></div>
+ <div class="grid4">
+  <article class="metric"><span>Stories loaded</span><strong id="newsStoriesLoaded">—</strong><small>Financially classified</small></article>
+  <article class="metric"><span>Live sources</span><strong id="newsLiveSources">—</strong><small>Independent feeds</small></article>
+  <article class="metric"><span>High importance today</span><strong id="newsHighToday">—</strong><small>Latest 30-hour window</small></article>
+  <article class="metric"><span>Top market mentioned</span><strong id="newsTopMarket">—</strong><small>Current feed window</small></article>
+ </div>
+ <article class="panel blue">
+  <div class="heading"><div><h3>What changed today?</h3><p>A factual summary of the latest feed window.</p></div></div>
+  <div id="whatChangedToday"></div>
+ </article>
  <div class="controls">
-  <label>Impact <select id="newsImpact"><option value="All">All</option><option>High</option><option>Medium</option><option>Low</option></select></label>
+  <label>Importance <select id="newsImpact"><option value="All">All</option><option>Critical</option><option>High</option><option>Medium</option><option>Low</option></select></label>
+  <label>Source <select id="newsSource"><option value="All">All</option></select></label>
+  <label>Category <select id="newsCategory"><option value="All">All</option></select></label>
   <label>Market <select id="newsMarket"><option value="All">All</option></select></label>
   <button id="reloadNews">Refresh news</button>
  </div>
- <article class="panel purple"><div id="newsList" class="news-list"></div></article>
+ <div class="cols">
+  <article class="panel purple"><div class="heading"><div><h3>Financial news feed</h3><p>Sorted by importance and publication time.</p></div></div><div id="newsList" class="news-list"></div></article>
+  <article class="panel cyan"><div class="heading"><div><h3>Source health</h3><p>One failed source will not break the other feeds.</p></div></div><div id="newsSourceHealth"></div></article>
+ </div>
 </section>
 
 <section id="calendar" class="page">
@@ -238,7 +253,7 @@ footer{text-align:center;color:#7d92aa;padding:18px}
 </div>
 
 <script>
-let cotData=null, newsData=[], providerData={}, calendarData={configured:false,events:[]}, macroData={}, marketsData={};
+let cotData=null, newsData=[], newsMeta={}, providerData={}, calendarData={configured:false,events:[]}, macroData={}, marketsData={};
 let activeHorizon="Daily";
 const months=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 const currencyMarkets=["USD","EUR","GBP","JPY","CHF","CAD","AUD","NZD"];
@@ -348,17 +363,66 @@ function renderMetals(){
  document.getElementById("metalInterpretation").innerHTML=interpretationHTML(m)+`<div class="interpretation neutral" style="margin-top:12px"><h4>Missing confirmations</h4><p>Live metal price, USD, real-yield and global-risk inputs activate after market-data and FRED keys are connected.</p></div>`;
 }
 function filterNews(){
- const impact=document.getElementById("newsImpact").value,market=document.getElementById("newsMarket").value;
- return newsData.filter(n=>(impact==="All"||n.impact===impact)&&(market==="All"||n.affected_markets.includes(market)));
+ const impact=document.getElementById("newsImpact").value;
+ const source=document.getElementById("newsSource").value;
+ const category=document.getElementById("newsCategory").value;
+ const market=document.getElementById("newsMarket").value;
+ return newsData.filter(n=>
+  (impact==="All"||n.importance===impact||n.impact===impact)&&
+  (source==="All"||n.source===source)&&
+  (category==="All"||(n.categories||[]).includes(category))&&
+  (market==="All"||(n.affected_markets||[]).includes(market))
+ );
 }
 function newsHTML(item){
  const time=item.published?new Date(item.published).toLocaleString("en-GB"):"";
- return `<article class="news-item"><div class="news-top"><div><h4>${item.title}</h4><p>${item.source} • ${time}</p></div><span class="chip ${item.impact.toLowerCase()}">${item.impact}</span></div><p>${item.summary||""}</p><div class="chips">${(item.countries||[]).map(x=>`<span class="chip">${x}</span>`).join("")}${(item.affected_markets||[]).map(x=>`<span class="chip">${x}</span>`).join("")}${(item.effects||[]).map(x=>`<span class="chip">${x}</span>`).join("")}</div></article>`;
+ const importance=(item.importance||item.impact||"Low").toLowerCase();
+ const sourceTier=item.source_tier?` • ${item.source_tier}`:"";
+ return `<article class="news-item">
+  <div class="news-top">
+   <div><h4>${item.title}</h4><p>${item.source}${sourceTier} • ${time}</p></div>
+   <span class="chip ${importance==="critical"?"high":importance}">${item.importance||item.impact||"Low"}</span>
+  </div>
+  <p>${item.summary||""}</p>
+  <div class="chips">
+   ${(item.categories||[]).map(x=>`<span class="chip">${x}</span>`).join("")}
+   ${(item.countries||[]).map(x=>`<span class="chip">${x}</span>`).join("")}
+   ${(item.affected_markets||[]).map(x=>`<span class="chip">${x}</span>`).join("")}
+   ${(item.effects||[]).map(x=>`<span class="chip">${x}</span>`).join("")}
+  </div>
+ </article>`;
+}
+function populateNewsFilters(){
+ const sources=[...new Set(newsData.map(n=>n.source).filter(Boolean))].sort();
+ const categories=[...new Set(newsData.flatMap(n=>n.categories||[]))].sort();
+ document.getElementById("newsSource").innerHTML='<option value="All">All</option>'+sources.map(x=>`<option>${x}</option>`).join("");
+ document.getElementById("newsCategory").innerHTML='<option value="All">All</option>'+categories.map(x=>`<option>${x}</option>`).join("");
+}
+function renderTodaySummary(){
+ const summary=newsMeta.today_summary||{};
+ const bullets=(summary.bullets||[]).map(x=>`<p>• ${x}</p>`).join("");
+ const headlines=(summary.headline_items||[]).slice(0,4).map(item=>`<div class="provider"><span>${item.title}<br><small>${item.source}</small></span><strong>${item.importance||item.impact}</strong></div>`).join("");
+ document.getElementById("whatChangedToday").innerHTML=`<div class="interpretation neutral">${bullets||"<p>No summary available.</p>"}</div>${headlines}`;
+ document.getElementById("newsStoriesLoaded").textContent=newsData.length;
+ const statuses=newsMeta.source_status||[];
+ document.getElementById("newsLiveSources").textContent=statuses.filter(x=>x.live).length+"/"+statuses.length;
+ document.getElementById("newsHighToday").textContent=summary.high_importance??"—";
+ document.getElementById("newsTopMarket").textContent=summary.top_markets?.[0]?.name||"—";
+}
+function renderSourceHealth(){
+ const statuses=newsMeta.source_status||[];
+ document.getElementById("newsSourceHealth").innerHTML=statuses.map(row=>`<div class="provider">
+  <span>${row.source}<br><small>${row.tier||""} • ${row.stories||0} stories</small></span>
+  <strong class="${row.live?"on":"off"}">${row.live?"Live":"Unavailable"}</strong>
+ </div>`).join("")||'<div class="message">No source status available.</div>';
 }
 function renderNews(){
- document.getElementById("newsList").innerHTML=filterNews().map(newsHTML).join("")||'<div class="message">No matching stories.</div>';
- const high=newsData.filter(n=>n.impact==="High").slice(0,4);document.getElementById("overviewNews").innerHTML=high.map(newsHTML).join("")||'<div class="message">No high-impact BBC stories currently classified.</div>';
+ document.getElementById("newsList").innerHTML=filterNews().map(newsHTML).join("")||'<div class="message">No matching financial stories.</div>';
+ const high=newsData.filter(n=>["Critical","High"].includes(n.importance||n.impact)).slice(0,4);
+ document.getElementById("overviewNews").innerHTML=high.map(newsHTML).join("")||'<div class="message">No high-importance stories currently classified.</div>';
  document.getElementById("newsCount").textContent=newsData.length;
+ renderTodaySummary();
+ renderSourceHealth();
 }
 function renderCalendar(){
  const message=document.getElementById("calendarMessage"),list=document.getElementById("calendarList");
@@ -540,19 +604,19 @@ function renderOutlook(){
 async function loadAll(){
  try{
   const [cotRes,newsRes,providersRes,calendarRes,macroRes,marketsRes]=await Promise.all([fetch("/api/cot"),fetch("/api/news"),fetch("/api/providers"),fetch("/api/calendar"),fetch("/api/macro"),fetch("/api/markets")]);
-  cotData=await cotRes.json();const newsPayload=await newsRes.json();newsData=newsPayload.data?.items||newsPayload.items||[];providerData=await providersRes.json();calendarData=await calendarRes.json();macroData=await macroRes.json();marketsData=await marketsRes.json();
+  cotData=await cotRes.json();const newsPayload=await newsRes.json();newsMeta=newsPayload.data||newsPayload;newsData=newsMeta.items||[];providerData=await providersRes.json();calendarData=await calendarRes.json();macroData=await macroRes.json();marketsData=await marketsRes.json();
   document.getElementById("status").textContent="Live CFTC + BBC";document.getElementById("status").className="status live";
   document.getElementById("refreshTime").textContent="Last COT refresh: "+(cotData.last_refresh?.time?new Date(cotData.last_refresh.time).toLocaleString("en-GB"):"—");
   populateSelect("overviewMarket",currencyMarkets);populateSelect("cotMarket",currencyMarkets);populateSelect("metalSelect",metalMarkets);populateSelect("outlookMarket",[...currencyMarkets,...metalMarkets]);
-  const nm=document.getElementById("newsMarket");nm.innerHTML='<option value="All">All</option>'+[...currencyMarkets,...metalMarkets,"GLOBAL"].map(x=>`<option>${x}</option>`).join("");
+  const nm=document.getElementById("newsMarket");nm.innerHTML='<option value="All">All</option>'+[...currencyMarkets,...metalMarkets,"GLOBAL"].map(x=>`<option>${x}</option>`).join("");populateNewsFilters();
   renderRanking();renderInterpretations();renderCotChart();renderMetals();renderNews();renderCalendar();renderProviders();renderMarkets();renderFred();renderOutlook();
  }catch(error){document.getElementById("status").textContent="Load error";document.getElementById("status").className="status error";console.error(error)}
 }
 document.getElementById("overviewMarket").addEventListener("change",renderInterpretations);
 ["cotMarket","chartMode","showCommercial","showNoncommercial"].forEach(id=>document.getElementById(id).addEventListener("change",renderCotChart));
 document.getElementById("metalSelect").addEventListener("change",renderMetals);
-["newsImpact","newsMarket"].forEach(id=>document.getElementById(id).addEventListener("change",renderNews));
-document.getElementById("reloadNews").addEventListener("click",async()=>{const p=await (await fetch("/api/news")).json();newsData=p.data?.items||p.items||[];renderNews()});
+["newsImpact","newsSource","newsCategory","newsMarket"].forEach(id=>document.getElementById(id).addEventListener("change",renderNews));
+document.getElementById("reloadNews").addEventListener("click",async()=>{const p=await (await fetch("/api/news")).json();newsMeta=p.data||p;newsData=newsMeta.items||[];populateNewsFilters();renderNews()});
 document.getElementById("refresh").addEventListener("click",async()=>{await fetch("/api/cot/refresh",{method:"POST"});location.reload()});
 numberMode.addEventListener("change",()=>{renderRanking();renderInterpretations();renderCotChart();renderMetals();renderOutlook()});
 document.getElementById("addSeasonMarket").addEventListener("click",()=>{seasonality.push({market:"NEW",values:Array(12).fill(0)});renderSeasonality()});
