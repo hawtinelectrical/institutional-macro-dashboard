@@ -184,6 +184,21 @@ class EconomicEvent(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
+
+class TechnicalSetup(Base):
+    __tablename__ = "technical_setups"
+
+    pair: Mapped[str] = mapped_column(String(20), primary_key=True)
+    direction: Mapped[str] = mapped_column(String(10), default="Long")
+    htf_direction: Mapped[str] = mapped_column(String(12), default="Neutral")
+    mtf_choch: Mapped[bool] = mapped_column(Boolean, default=False)
+    ltf_choch: Mapped[bool] = mapped_column(Boolean, default=False)
+    bos_confirmed: Mapped[bool] = mapped_column(Boolean, default=False)
+    pullback_ready: Mapped[bool] = mapped_column(Boolean, default=False)
+    invalidated: Mapped[bool] = mapped_column(Boolean, default=False)
+    notes: Mapped[str] = mapped_column(Text, default="")
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
 def initialise_database() -> None:
     # This is intentionally additive only. It preserves the V5 cot_positions table.
     Base.metadata.create_all(engine)
@@ -1172,6 +1187,130 @@ def latest_market_brief(
     }
 
 
+
+def normalise_pair(value: str) -> str:
+    cleaned = re.sub(r"[^A-Za-z]", "", value or "").upper()
+    if len(cleaned) == 6:
+        return f"{cleaned[:3]}/{cleaned[3:]}"
+    if "/" in (value or ""):
+        parts = [part.strip().upper() for part in value.split("/", 1)]
+        if len(parts) == 2 and all(len(part) == 3 for part in parts):
+            return f"{parts[0]}/{parts[1]}"
+    raise ValueError("Pair must contain two three-letter currencies, for example GBP/JPY.")
+
+
+def technical_setup_state(row: dict[str, Any]) -> dict[str, Any]:
+    direction = str(row.get("direction", "Long")).title()
+    htf_direction = str(row.get("htf_direction", "Neutral")).title()
+    expected_htf = "Bullish" if direction == "Long" else "Bearish"
+    htf_aligned = htf_direction == expected_htf
+
+    checks = {
+        "HTF aligned": htf_aligned,
+        "MTF CHoCH": bool(row.get("mtf_choch")),
+        "LTF CHoCH": bool(row.get("ltf_choch")),
+        "BOS confirmed": bool(row.get("bos_confirmed")),
+        "Pullback ready": bool(row.get("pullback_ready")),
+    }
+    completed = sum(1 for value in checks.values() if value)
+    technical_score = completed * 20
+
+    if bool(row.get("invalidated")):
+        status = "Invalidated"
+    elif completed == 5:
+        status = "Ready"
+    elif htf_aligned and completed >= 2:
+        status = "Watch"
+    else:
+        status = "Not Ready"
+
+    waiting_for = [label for label, value in checks.items() if not value]
+    return {
+        "status": status,
+        "technical_score": technical_score,
+        "htf_aligned": htf_aligned,
+        "checks": checks,
+        "waiting_for": waiting_for,
+    }
+
+
+def serialise_technical_setup(row: TechnicalSetup) -> dict[str, Any]:
+    payload = {
+        "pair": row.pair,
+        "direction": row.direction,
+        "htf_direction": row.htf_direction,
+        "mtf_choch": row.mtf_choch,
+        "ltf_choch": row.ltf_choch,
+        "bos_confirmed": row.bos_confirmed,
+        "pullback_ready": row.pullback_ready,
+        "invalidated": row.invalidated,
+        "notes": row.notes,
+        "updated_at": row.updated_at.isoformat() if row.updated_at else None,
+    }
+    return {**payload, **technical_setup_state(payload)}
+
+
+def read_technical_setups() -> list[dict[str, Any]]:
+    with Session(engine) as session:
+        rows = session.scalars(
+            select(TechnicalSetup).order_by(TechnicalSetup.updated_at.desc())
+        ).all()
+    return [serialise_technical_setup(row) for row in rows]
+
+
+def save_technical_setup(payload: dict[str, Any]) -> dict[str, Any]:
+    pair = normalise_pair(str(payload.get("pair", "")))
+    direction = str(payload.get("direction", "Long")).title()
+    if direction not in {"Long", "Short"}:
+        raise ValueError("Direction must be Long or Short.")
+
+    htf_direction = str(payload.get("htf_direction", "Neutral")).title()
+    if htf_direction not in {"Bullish", "Bearish", "Neutral"}:
+        raise ValueError("HTF direction must be Bullish, Bearish or Neutral.")
+
+    now = datetime.now(timezone.utc)
+    with Session(engine) as session:
+        setup = session.get(TechnicalSetup, pair)
+        if setup is None:
+            setup = TechnicalSetup(
+                pair=pair,
+                direction=direction,
+                htf_direction=htf_direction,
+                mtf_choch=bool(payload.get("mtf_choch")),
+                ltf_choch=bool(payload.get("ltf_choch")),
+                bos_confirmed=bool(payload.get("bos_confirmed")),
+                pullback_ready=bool(payload.get("pullback_ready")),
+                invalidated=bool(payload.get("invalidated")),
+                notes=str(payload.get("notes", "")),
+                updated_at=now,
+            )
+            session.add(setup)
+        else:
+            setup.direction = direction
+            setup.htf_direction = htf_direction
+            setup.mtf_choch = bool(payload.get("mtf_choch"))
+            setup.ltf_choch = bool(payload.get("ltf_choch"))
+            setup.bos_confirmed = bool(payload.get("bos_confirmed"))
+            setup.pullback_ready = bool(payload.get("pullback_ready"))
+            setup.invalidated = bool(payload.get("invalidated"))
+            setup.notes = str(payload.get("notes", ""))
+            setup.updated_at = now
+        session.commit()
+        session.refresh(setup)
+        return serialise_technical_setup(setup)
+
+
+def delete_technical_setup(pair: str) -> dict[str, Any]:
+    normalised = normalise_pair(pair)
+    with Session(engine) as session:
+        setup = session.get(TechnicalSetup, normalised)
+        if setup is None:
+            return {"deleted": False}
+        session.delete(setup)
+        session.commit()
+    return {"deleted": True}
+
+
 scheduler = AsyncIOScheduler(timezone="UTC")
 
 
@@ -1194,7 +1333,7 @@ async def lifespan(_: FastAPI):
     scheduler.shutdown(wait=False)
 
 
-app = FastAPI(title="Institutional Market Intelligence Terminal v7.5 Currency and Pair Intelligence", lifespan=lifespan)
+app = FastAPI(title="Institutional Market Intelligence Terminal v7.6 TradingView Setup Centre", lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
@@ -1312,6 +1451,27 @@ async def daily_brief() -> dict[str, Any]:
         news_payload=news_payload,
         calendar_payload=calendar_payload,
     )
+
+
+@app.get("/api/setups")
+async def technical_setups() -> dict[str, Any]:
+    return {"setups": read_technical_setups()}
+
+
+@app.post("/api/setups")
+async def upsert_technical_setup(payload: dict[str, Any]) -> dict[str, Any]:
+    try:
+        return save_technical_setup(payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.delete("/api/setups/{pair:path}")
+async def remove_technical_setup(pair: str) -> dict[str, Any]:
+    try:
+        return delete_technical_setup(pair)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @app.get("/api/providers")
