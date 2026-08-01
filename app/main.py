@@ -22,6 +22,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import (
     BigInteger,
+    Boolean,
     Date,
     DateTime,
     Float,
@@ -162,6 +163,24 @@ class SeasonalityValue(Base):
     market: Mapped[str] = mapped_column(String(40), primary_key=True)
     month_number: Mapped[int] = mapped_column(primary_key=True)
     tendency: Mapped[float] = mapped_column(Float, default=0.0)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class EconomicEvent(Base):
+    __tablename__ = "economic_events"
+
+    event_id: Mapped[str] = mapped_column(String(120), primary_key=True)
+    event_time: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    country: Mapped[str] = mapped_column(String(80))
+    currency: Mapped[str] = mapped_column(String(20))
+    event_name: Mapped[str] = mapped_column(String(255))
+    impact: Mapped[str] = mapped_column(String(20))
+    actual: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    forecast: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    previous: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    source: Mapped[str] = mapped_column(String(120), default="Manual")
+    effects_json: Mapped[str] = mapped_column(Text, default="[]")
+    is_manual: Mapped[bool] = mapped_column(Boolean, default=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
@@ -906,6 +925,253 @@ async def twelve_data_free_markets() -> dict[str, Any]:
     return result
 
 
+
+def normalise_event_time(value: Any) -> datetime:
+    if isinstance(value, datetime):
+        event_time = value
+    else:
+        event_time = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    if event_time.tzinfo is None:
+        event_time = event_time.replace(tzinfo=timezone.utc)
+    return event_time.astimezone(timezone.utc)
+
+
+def event_effects(event_name: str, currency: str) -> list[str]:
+    haystack = event_name.lower()
+    effects = [currency] if currency else []
+    if any(term in haystack for term in ["rate", "central bank", "monetary policy"]):
+        effects += ["Government bonds", "Equities", "Gold"]
+    elif any(term in haystack for term in ["inflation", "cpi", "ppi", "pce"]):
+        effects += ["Bond yields", "Policy expectations", "Precious metals"]
+    elif any(term in haystack for term in ["employment", "payroll", "unemployment", "wages"]):
+        effects += ["Bond yields", "Equities"]
+    elif any(term in haystack for term in ["gdp", "pmi", "retail sales", "growth"]):
+        effects += ["Equities", "Government bonds"]
+    else:
+        effects += ["Related national equity index", "Government bonds"]
+    return list(dict.fromkeys(effects))
+
+
+def read_manual_events(days_back: int = 2, days_forward: int = 45) -> list[dict[str, Any]]:
+    start = datetime.now(timezone.utc) - timedelta(days=days_back)
+    end = datetime.now(timezone.utc) + timedelta(days=days_forward)
+    with Session(engine) as session:
+        rows = session.scalars(
+            select(EconomicEvent)
+            .where(EconomicEvent.event_time >= start, EconomicEvent.event_time <= end)
+            .order_by(EconomicEvent.event_time.asc())
+        ).all()
+
+    output = []
+    for row in rows:
+        try:
+            effects = json.loads(row.effects_json)
+        except json.JSONDecodeError:
+            effects = []
+        output.append({
+            "event_id": row.event_id,
+            "date": row.event_time.isoformat(),
+            "country": row.country,
+            "currency": row.currency,
+            "event": row.event_name,
+            "impact": row.impact,
+            "actual": row.actual,
+            "forecast": row.forecast,
+            "previous": row.previous,
+            "source": row.source,
+            "effects": effects,
+            "is_manual": row.is_manual,
+        })
+    return output
+
+
+def save_manual_events(payload: dict[str, Any]) -> dict[str, Any]:
+    rows = payload.get("events", [])
+    now = datetime.now(timezone.utc)
+    saved = 0
+    with Session(engine) as session:
+        for row in rows:
+            try:
+                event_time = normalise_event_time(row.get("date"))
+            except Exception:
+                continue
+            event_name = str(row.get("event", "")).strip()
+            country = str(row.get("country", "")).strip() or "Unknown"
+            currency = str(row.get("currency", "")).strip().upper() or "GLOBAL"
+            if not event_name:
+                continue
+            event_id = str(row.get("event_id") or f"manual-{event_time.isoformat()}-{country}-{event_name}")[:120]
+            effects = row.get("effects") or event_effects(event_name, currency)
+
+            existing = session.get(EconomicEvent, event_id)
+            if existing is None:
+                existing = EconomicEvent(
+                    event_id=event_id,
+                    event_time=event_time,
+                    country=country,
+                    currency=currency,
+                    event_name=event_name,
+                    impact=str(row.get("impact", "Medium")),
+                    actual=row.get("actual"),
+                    forecast=row.get("forecast"),
+                    previous=row.get("previous"),
+                    source=str(row.get("source", "Manual")),
+                    effects_json=json.dumps(effects),
+                    is_manual=True,
+                    updated_at=now,
+                )
+                session.add(existing)
+            else:
+                existing.event_time = event_time
+                existing.country = country
+                existing.currency = currency
+                existing.event_name = event_name
+                existing.impact = str(row.get("impact", "Medium"))
+                existing.actual = row.get("actual")
+                existing.forecast = row.get("forecast")
+                existing.previous = row.get("previous")
+                existing.source = str(row.get("source", "Manual"))
+                existing.effects_json = json.dumps(effects)
+                existing.updated_at = now
+            saved += 1
+        session.commit()
+    return {"saved": saved}
+
+
+def delete_manual_event(event_id: str) -> dict[str, Any]:
+    with Session(engine) as session:
+        event = session.get(EconomicEvent, event_id)
+        if event is None:
+            return {"deleted": False}
+        session.delete(event)
+        session.commit()
+    return {"deleted": True}
+
+
+async def combined_calendar() -> dict[str, Any]:
+    manual = read_manual_events()
+    provider = await trading_economics_calendar()
+    provider_events = provider.get("events", []) if provider.get("configured") else []
+
+    combined: dict[str, dict[str, Any]] = {}
+    for event in provider_events + manual:
+        key = str(event.get("event_id") or f"{event.get('date')}-{event.get('country')}-{event.get('event')}")
+        if "effects" not in event:
+            event["effects"] = event_effects(
+                str(event.get("event", "")),
+                str(event.get("currency") or event.get("country") or "GLOBAL"),
+            )
+        combined[key] = event
+
+    events = sorted(combined.values(), key=lambda row: row.get("date") or "")
+    return {
+        "configured": True,
+        "provider_connected": bool(provider.get("configured")),
+        "manual_events": len(manual),
+        "events": events,
+        "message": (
+            "Trading Economics calendar connected."
+            if provider.get("configured")
+            else "Using cloud-saved manual calendar entries. Trading Economics remains optional."
+        ),
+    }
+
+
+def latest_market_brief(
+    cot_payload: dict[str, Any],
+    macro_payload: dict[str, Any],
+    markets_payload: dict[str, Any],
+    news_payload: dict[str, Any],
+    calendar_payload: dict[str, Any],
+) -> dict[str, Any]:
+    currencies = cot_payload.get("currencies", {})
+    relationships = {}
+    for market, rows in currencies.items():
+        if len(rows) < 2:
+            continue
+        first, last = rows[0], rows[-1]
+        commercial = last["commercial_net"] - first["commercial_net"]
+        noncommercial = last["noncommercial_net"] - first["noncommercial_net"]
+        score = noncommercial - commercial
+        if commercial < 0 and noncommercial > 0:
+            label = "Bullish relationship"
+        elif commercial > 0 and noncommercial < 0:
+            label = "Bearish relationship"
+        else:
+            label = "Mixed relationship"
+        relationships[market] = {
+            "score": score,
+            "label": label,
+            "commercial_change": commercial,
+            "noncommercial_change": noncommercial,
+        }
+
+    ranked = sorted(relationships.items(), key=lambda row: row[1]["score"], reverse=True)
+    strongest = ranked[0] if ranked else None
+    weakest = ranked[-1] if ranked else None
+
+    market_regime = markets_payload.get("risk_regime") or "Unavailable"
+    average_weekly = markets_payload.get("average_weekly_change_pct")
+
+    summaries = macro_payload.get("summaries", {}) if macro_payload.get("configured") else {}
+    us10y = summaries.get("US_10Y", {})
+    real10y = summaries.get("REAL_10Y", {})
+
+    news_data = news_payload.get("data", news_payload)
+    today_summary = news_data.get("today_summary", {})
+    high_news = today_summary.get("high_importance", 0)
+
+    now = datetime.now(timezone.utc)
+    upcoming = [
+        event for event in calendar_payload.get("events", [])
+        if event.get("date") and normalise_event_time(event["date"]) >= now
+    ]
+    upcoming.sort(key=lambda row: row["date"])
+    next_high = next((event for event in upcoming if event.get("impact") == "High"), upcoming[0] if upcoming else None)
+
+    evidence = []
+    if strongest:
+        evidence.append(f"Strongest COT relationship: {strongest[0]} — {strongest[1]['label']}.")
+    if weakest:
+        evidence.append(f"Weakest COT relationship: {weakest[0]} — {weakest[1]['label']}.")
+    if market_regime != "Unavailable":
+        evidence.append(
+            f"Global equity proxy regime: {market_regime}"
+            + (f" ({average_weekly:+.2f}% average weekly move)." if average_weekly is not None else ".")
+        )
+    if us10y.get("latest") is not None:
+        evidence.append(
+            f"US 10-year yield: {us10y['latest']:.3f}% with weekly change {us10y.get('weekly_change', 0):+.3f} pp."
+        )
+    if real10y.get("latest") is not None:
+        evidence.append(
+            f"US 10-year real yield: {real10y['latest']:.3f}% with weekly change {real10y.get('weekly_change', 0):+.3f} pp."
+        )
+    evidence.append(f"High-importance financial stories in the latest window: {high_news}.")
+    if next_high:
+        evidence.append(
+            f"Next major calendar event: {next_high.get('event')} — {next_high.get('country')} at {next_high.get('date')}."
+        )
+
+    preferred_pair = None
+    if strongest and weakest and strongest[0] != weakest[0]:
+        preferred_pair = f"{strongest[0]}/{weakest[0]}"
+
+    return {
+        "generated_at": now.isoformat(),
+        "market_regime": market_regime,
+        "strongest_relationship": strongest,
+        "weakest_relationship": weakest,
+        "preferred_pair_for_review": preferred_pair,
+        "next_high_impact_event": next_high,
+        "high_importance_news": high_news,
+        "us_10y": us10y,
+        "real_10y": real10y,
+        "evidence": evidence,
+        "trade_confirmation": "Not confirmed — wait for TradingView HTF/MTF/LTF alignment.",
+    }
+
+
 scheduler = AsyncIOScheduler(timezone="UTC")
 
 
@@ -928,7 +1194,7 @@ async def lifespan(_: FastAPI):
     scheduler.shutdown(wait=False)
 
 
-app = FastAPI(title="Institutional Market Intelligence Terminal v7.3 News Intelligence", lifespan=lifespan)
+app = FastAPI(title="Institutional Market Intelligence Terminal v7.4 Calendar and Daily Brief", lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
@@ -981,7 +1247,17 @@ async def news() -> dict[str, Any]:
 
 @app.get("/api/calendar")
 async def calendar() -> dict[str, Any]:
-    return await trading_economics_calendar()
+    return await combined_calendar()
+
+
+@app.post("/api/calendar")
+async def save_calendar(payload: dict[str, Any]) -> dict[str, Any]:
+    return save_manual_events(payload)
+
+
+@app.delete("/api/calendar/{event_id}")
+async def delete_calendar(event_id: str) -> dict[str, Any]:
+    return delete_manual_event(event_id)
 
 
 @app.get("/api/macro")
@@ -1016,6 +1292,25 @@ async def intelligence() -> dict[str, Any]:
         cot_payload=cot_payload,
         markets_payload=markets_payload,
         news_payload=news_result.data,
+    )
+
+
+@app.get("/api/brief")
+async def daily_brief() -> dict[str, Any]:
+    cot_payload = build_payload()
+    macro_payload = await fred_macro()
+    try:
+        markets_payload = await twelve_data_free_markets()
+    except Exception as exc:  # noqa: BLE001
+        markets_payload = {"configured": False, "markets": [], "risk_regime": "Unavailable", "error": str(exc)}
+    news_payload = (await get_official_news()).as_dict()
+    calendar_payload = await combined_calendar()
+    return latest_market_brief(
+        cot_payload=cot_payload,
+        macro_payload=macro_payload,
+        markets_payload=markets_payload,
+        news_payload=news_payload,
+        calendar_payload=calendar_payload,
     )
 
 
