@@ -88,7 +88,7 @@ footer{text-align:center;color:#7d92aa;padding:18px}
   <button class="nav" data-page="outlooks">Outlooks</button>
   <button class="nav" data-page="providers">Data Connections</button>
  </nav>
- <div class="version">Version 8<br>Seasonality & Alignment</div>
+ <div class="version">Version 8.1<br>Automatic Seasonality</div>
 </aside>
 
 <main class="content">
@@ -392,6 +392,27 @@ footer{text-align:center;color:#7d92aa;padding:18px}
   <article class="metric"><span>Highest reliability</span><strong id="seasonReliable">—</strong><small id="seasonReliableValue">—</small></article>
   <article class="metric"><span>Profiles stored</span><strong id="seasonProfileCount">0</strong><small>Cloud database</small></article>
  </div>
+
+ <article class="panel green">
+  <div class="heading">
+   <div>
+    <h3>Automatic historical-price calculation</h3>
+    <p>Calculates monthly 5Y, 10Y and 20Y seasonality from online price history and saves it to PostgreSQL.</p>
+   </div>
+  </div>
+  <div class="grid4">
+   <article class="metric"><span>Data provider</span><strong id="autoSeasonProvider">—</strong><small>Twelve Data monthly history</small></article>
+   <article class="metric"><span>Currency group</span><strong id="autoSeasonCoreStatus">Never run</strong><small id="autoSeasonCoreTime">8 symbols</small></article>
+   <article class="metric"><span>Assets group</span><strong id="autoSeasonAssetsStatus">Never run</strong><small id="autoSeasonAssetsTime">8 symbols</small></article>
+   <article class="metric"><span>Update schedule</span><strong>Monthly</strong><small>Two rate-limit-safe jobs</small></article>
+  </div>
+  <div class="controls">
+   <button id="refreshSeasonCore">Refresh currencies now</button>
+   <button id="refreshSeasonAssets">Refresh metals & indices now</button>
+   <span id="autoSeasonMessage" class="status">Ready</span>
+  </div>
+  <p style="color:var(--muted)">The free plan is protected by splitting updates into two groups of eight. Do not click both buttons within the same minute.</p>
+ </article>
 
  <article class="panel gold">
   <div class="heading">
@@ -860,6 +881,60 @@ function blankSeasonMonth(monthNumber){
 function defaultSeasonalityProfiles(){
  return ["USD","EUR","GBP","JPY","CHF","CAD","AUD","NZD","GOLD","SILVER","FTSE100","SP500"].map(m=>({market:m,months:Array.from({length:12},(_,i)=>blankSeasonMonth(i+1))}));
 }
+
+function autoGroupSummary(group){
+ const data=autoSeasonalityStatus?.groups?.[group];
+ if(!data)return {label:"Never run",time:"No completed refresh"};
+ const results=data.results||[];
+ const updated=results.filter(row=>row.status==="updated").length;
+ const total=results.length;
+ return {
+  label:`${updated}/${total} updated`,
+  time:data.completed_at?new Date(data.completed_at).toLocaleString("en-GB"):"Unknown time",
+ };
+}
+function renderAutoSeasonalityStatus(){
+ document.getElementById("autoSeasonProvider").textContent=autoSeasonalityStatus.configured?"Connected":"Not connected";
+ const core=autoGroupSummary("core"),assets=autoGroupSummary("assets");
+ document.getElementById("autoSeasonCoreStatus").textContent=core.label;
+ document.getElementById("autoSeasonCoreTime").textContent=core.time;
+ document.getElementById("autoSeasonAssetsStatus").textContent=assets.label;
+ document.getElementById("autoSeasonAssetsTime").textContent=assets.time;
+}
+async function loadAutoSeasonalityStatus(){
+ try{
+  autoSeasonalityStatus=await (await fetch("/api/seasonality/auto/status")).json();
+ }catch{
+  autoSeasonalityStatus={configured:false,groups:{}};
+ }
+ renderAutoSeasonalityStatus();
+}
+async function refreshAutomaticSeasonality(group){
+ const buttonId=group==="core"?"refreshSeasonCore":"refreshSeasonAssets";
+ const button=document.getElementById(buttonId);
+ const message=document.getElementById("autoSeasonMessage");
+ button.disabled=true;
+ message.textContent=`Refreshing ${group}…`;
+ message.className="status";
+ try{
+  const response=await fetch(`/api/seasonality/auto/refresh/${group}`,{method:"POST"});
+  const payload=await response.json();
+  if(!response.ok)throw new Error(payload.detail||"Refresh failed.");
+  message.textContent=`${payload.updated}/${payload.total} markets updated`;
+  message.className="status live";
+  await loadSeasonality();
+  await loadAutoSeasonalityStatus();
+  renderCurrencyIntelligence();
+  renderPairRankings();
+  renderAlignment();
+ }catch(error){
+  message.textContent=error.message;
+  message.className="status error";
+ }finally{
+  button.disabled=false;
+ }
+}
+
 async function loadSeasonality(){
  try{
   const response=await fetch("/api/seasonality/v2");
@@ -1314,12 +1389,14 @@ document.getElementById("loadTopPair").addEventListener("click",loadTopPair);
 document.getElementById("setupStatusFilter").addEventListener("change",renderSetups);
 document.getElementById("setupDetailSelect").addEventListener("change",renderSetupDetail);
 document.getElementById("seasonMetric").addEventListener("change",renderSeasonality);
+document.getElementById("refreshSeasonCore").addEventListener("click",()=>refreshAutomaticSeasonality("core"));
+document.getElementById("refreshSeasonAssets").addEventListener("click",()=>refreshAutomaticSeasonality("assets"));
 document.getElementById("seasonDetailMarket").addEventListener("change",()=>{renderSeasonCurve();renderSeasonDetail();});
 document.getElementById("applySeasonCell").addEventListener("click",applySeasonCell);
 document.getElementById("alignmentHorizon").addEventListener("change",renderAlignment);
 document.getElementById("alignmentCount").addEventListener("change",renderAlignment);
 document.getElementById("alignmentPairSelect").addEventListener("change",renderAlignmentDetail);
-loadSeasonality();loadAll();
+loadAutoSeasonalityStatus();loadSeasonality();loadAll();
 </script>
 </body>
 </html>
