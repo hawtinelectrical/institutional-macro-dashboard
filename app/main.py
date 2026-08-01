@@ -589,38 +589,106 @@ async def fred_macro() -> dict[str, Any]:
         return {
             "configured": False,
             "series": {},
+            "summaries": {},
             "message": "Add FRED_API_KEY in Render.",
         }
 
     series_ids = {
-        "US_2Y": "DGS2",
-        "US_10Y": "DGS10",
-        "US_30Y": "DGS30",
-        "FED_FUNDS": "DFF",
-        "REAL_10Y": "DFII10",
+        "US_2Y": {"id": "DGS2", "name": "US 2-Year Treasury", "unit": "%"},
+        "US_5Y": {"id": "DGS5", "name": "US 5-Year Treasury", "unit": "%"},
+        "US_10Y": {"id": "DGS10", "name": "US 10-Year Treasury", "unit": "%"},
+        "US_30Y": {"id": "DGS30", "name": "US 30-Year Treasury", "unit": "%"},
+        "FED_FUNDS": {"id": "DFF", "name": "Effective Federal Funds Rate", "unit": "%"},
+        "REAL_10Y": {"id": "DFII10", "name": "US 10-Year Real Yield", "unit": "%"},
+        "BREAKEVEN_10Y": {"id": "T10YIE", "name": "US 10-Year Breakeven Inflation", "unit": "%"},
     }
-    output = {}
+
+    output: dict[str, list[dict[str, Any]]] = {}
+    summaries: dict[str, dict[str, Any]] = {}
+
     async with httpx.AsyncClient(timeout=45) as client:
-        for label, series_id in series_ids.items():
+        for label, definition in series_ids.items():
             response = await client.get(
                 "https://api.stlouisfed.org/fred/series/observations",
                 params={
-                    "series_id": series_id,
+                    "series_id": definition["id"],
                     "api_key": api_key,
                     "file_type": "json",
                     "sort_order": "desc",
-                    "limit": 30,
+                    "limit": 180,
                 },
             )
             response.raise_for_status()
-            output[label] = [
+            rows = [
                 {
                     "date": row["date"],
                     "value": None if row["value"] == "." else float(row["value"]),
                 }
                 for row in response.json().get("observations", [])
             ]
-    return {"configured": True, "series": output}
+            valid = [row for row in rows if row["value"] is not None]
+            output[label] = list(reversed(valid[:120]))
+
+            latest = valid[0]["value"] if valid else None
+            previous = valid[1]["value"] if len(valid) > 1 else None
+            week_ago = valid[min(5, len(valid) - 1)]["value"] if valid else None
+            month_ago = valid[min(21, len(valid) - 1)]["value"] if valid else None
+
+            summaries[label] = {
+                "name": definition["name"],
+                "series_id": definition["id"],
+                "unit": definition["unit"],
+                "latest_date": valid[0]["date"] if valid else None,
+                "latest": latest,
+                "daily_change": None if latest is None or previous is None else round(latest - previous, 3),
+                "weekly_change": None if latest is None or week_ago is None else round(latest - week_ago, 3),
+                "monthly_change": None if latest is None or month_ago is None else round(latest - month_ago, 3),
+            }
+
+    two_year = summaries.get("US_2Y", {}).get("latest")
+    ten_year = summaries.get("US_10Y", {}).get("latest")
+    thirty_year = summaries.get("US_30Y", {}).get("latest")
+    real_ten = summaries.get("REAL_10Y", {}).get("latest")
+    breakeven = summaries.get("BREAKEVEN_10Y", {}).get("latest")
+
+    curve_2s10s = None if two_year is None or ten_year is None else round(ten_year - two_year, 3)
+    curve_10s30s = None if ten_year is None or thirty_year is None else round(thirty_year - ten_year, 3)
+
+    if curve_2s10s is None:
+        curve_state = "Unavailable"
+    elif curve_2s10s < -0.05:
+        curve_state = "Inverted"
+    elif curve_2s10s > 0.25:
+        curve_state = "Upward sloping"
+    else:
+        curve_state = "Flat"
+
+    interpretation = []
+    if curve_2s10s is not None:
+        interpretation.append(
+            f"2s10s spread is {curve_2s10s:+.3f} percentage points ({curve_state.lower()})."
+        )
+    if real_ten is not None:
+        interpretation.append(
+            f"10-year real yield is {real_ten:.3f}%, an important input for USD and precious metals."
+        )
+    if breakeven is not None:
+        interpretation.append(
+            f"10-year breakeven inflation is {breakeven:.3f}%."
+        )
+
+    return {
+        "configured": True,
+        "provider": "FRED",
+        "series": output,
+        "summaries": summaries,
+        "yield_curve": {
+            "curve_2s10s": curve_2s10s,
+            "curve_10s30s": curve_10s30s,
+            "state": curve_state,
+        },
+        "interpretation": interpretation,
+    }
 
 
 def read_seasonality() -> dict[str, list[float]]:
@@ -860,7 +928,7 @@ async def lifespan(_: FastAPI):
     scheduler.shutdown(wait=False)
 
 
-app = FastAPI(title="Institutional Market Intelligence Terminal v7.1 Markets Hotfix", lifespan=lifespan)
+app = FastAPI(title="Institutional Market Intelligence Terminal v7.2 FRED Bonds", lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
