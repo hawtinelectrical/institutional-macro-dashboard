@@ -455,10 +455,25 @@ def classify_news(title: str, description: str) -> dict[str, Any]:
     elif any(term in haystack for term in MEDIUM_IMPACT_TERMS):
         impact = "Medium"
 
+    effects = []
+    if "inflation" in haystack or "cpi" in haystack:
+        effects = ["Currencies", "Bond yields", "Precious metals", "Equity indices"]
+    elif "interest rate" in haystack or "central bank" in haystack:
+        effects = ["Currencies", "Government bonds", "Equity indices", "Gold"]
+    elif "oil" in haystack:
+        effects = ["CAD", "Energy equities", "Inflation expectations"]
+    elif "war" in haystack or "sanction" in haystack:
+        effects = ["Risk sentiment", "Gold", "Oil", "Safe-haven currencies"]
+    elif affected:
+        effects = ["Currencies", "Related national equity index", "Government bonds"]
+    else:
+        effects = ["Global risk sentiment"]
+
     return {
         "impact": impact,
         "affected_markets": affected or ["GLOBAL"],
         "countries": countries or ["Global"],
+        "effects": effects,
     }
 
 
@@ -661,7 +676,7 @@ async def lifespan(_: FastAPI):
     scheduler.shutdown(wait=False)
 
 
-app = FastAPI(title="Institutional Macro Dashboard Cloud v6 Rebuilt", lifespan=lifespan)
+app = FastAPI(title="Institutional Macro Dashboard Cloud v6.1 News Hotfix", lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
