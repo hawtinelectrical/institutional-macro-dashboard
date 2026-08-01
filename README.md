@@ -1,45 +1,44 @@
-# Institutional Market Intelligence Terminal — Version 6 Rebuilt
+# Institutional Market Intelligence Terminal — Version 6.2 Free Global Markets
 
-This rebuild is safe to deploy over the existing Version 5 PostgreSQL database.
+## What this patch adds
 
-## Migration safety
+- Free Global Markets connection through Twelve Data
+- No paid Trading Economics subscription required
+- UK, US, Europe, Japan, Hong Kong, China, Australia, Canada, India and Brazil
+- Daily, weekly, monthly, six-month and yearly percentage changes
+- 60-trading-day charts
+- Transparent risk-on / risk-off summary
+- BBC Business-only news feed
 
-- Keeps the existing `cot_positions.currency` schema used by Version 5.
-- Adds a separate `metal_cot_positions` table.
-- Adds a separate `seasonality_values` table.
-- Uses additive table creation only; it does not rename or drop the live COT table.
+## Important proxy disclosure
 
-## Live without extra keys
+The free build uses liquid US-listed ETFs as regional market proxies:
 
-- CFTC Legacy Futures-Only COT
-- 8 major currencies
-- Gold, silver, platinum and palladium COT
-- Commercial and Non-commercial ON/OFF controls
-- Net-position chart
-- Weekly buying/selling chart
-- Relationship interpretation
-- BBC Business, World and UK RSS
-- Cloud-stored seasonality
-- Daily, weekly, monthly, 6-month and yearly outlook framework
+- EWU — United Kingdom
+- SPY — S&P 500
+- QQQ — Nasdaq 100
+- DIA — Dow
+- IWM — Russell 2000
+- EWG — Germany
+- EWQ — France
+- VGK — Europe
+- EWJ — Japan
+- EWH — Hong Kong
+- FXI — China large cap
+- EWA — Australia
+- EWC — Canada
+- INDA — India
+- EWZ — Brazil
 
-## Safer interpretation
+These are not official cash-index levels. They can differ because of currency effects, fund fees and trading hours. The dashboard labels them clearly.
 
-The dashboard distinguishes:
+## One free account needed
 
-1. **Trend relationship**
-   - Commercial selling + Non-commercial buying = bullish relationship
-   - Commercial buying + Non-commercial selling = bearish relationship
+Create a free Twelve Data account and add the key privately in Render:
 
-2. **Reversal warning**
-   - Opposing Commercial activity may become relevant at extremes.
+`TWELVE_DATA_API_KEY`
 
-3. **Trade confirmation**
-   - Not confirmed until price and the TradingView HTF/MTF/LTF structure agree.
-
-## Optional Render environment variables
-
-- `FRED_API_KEY`
-- `TRADING_ECONOMICS_API_KEY`
+The free plan currently advertises 800 API credits per day. This dashboard makes one batch request, while each symbol still consumes one credit.
 
 ## Update the live site
 
@@ -47,7 +46,8 @@ Replace:
 
 - `app/main.py`
 - `app/static/index.html`
-- `requirements.txt`
 - `README.md`
 
-Commit to GitHub and allow Render to redeploy.
+Commit with:
+
+`Version 6.2 free global markets`
