@@ -57,7 +57,7 @@ footer{text-align:center;color:#7d92aa;padding:18px}
   <button class="nav" data-page="outlooks">Outlooks</button>
   <button class="nav" data-page="providers">Data Connections</button>
  </nav>
- <div class="version">Cloud Edition V6<br>Live CFTC + BBC feeds</div>
+ <div class="version">Cloud Edition V6.1<br>BBC news hotfix</div>
 </aside>
 
 <main class="content">
@@ -294,7 +294,7 @@ function filterNews(){
 }
 function newsHTML(item){
  const time=item.published?new Date(item.published).toLocaleString("en-GB"):"";
- return `<article class="news-item"><div class="news-top"><div><h4>${item.title}</h4><p>${item.source} • ${time}</p></div><span class="chip ${item.impact.toLowerCase()}">${item.impact}</span></div><p>${item.summary||""}</p><div class="chips">${item.countries.map(x=>`<span class="chip">${x}</span>`).join("")}${item.affected_markets.map(x=>`<span class="chip">${x}</span>`).join("")}${item.effects.map(x=>`<span class="chip">${x}</span>`).join("")}</div></article>`;
+ return `<article class="news-item"><div class="news-top"><div><h4>${item.title}</h4><p>${item.source} • ${time}</p></div><span class="chip ${item.impact.toLowerCase()}">${item.impact}</span></div><p>${item.summary||""}</p><div class="chips">${(item.countries||[]).map(x=>`<span class="chip">${x}</span>`).join("")}${(item.affected_markets||[]).map(x=>`<span class="chip">${x}</span>`).join("")}${(item.effects||[]).map(x=>`<span class="chip">${x}</span>`).join("")}</div></article>`;
 }
 function renderNews(){
  document.getElementById("newsList").innerHTML=filterNews().map(newsHTML).join("")||'<div class="message">No matching stories.</div>';
