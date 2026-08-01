@@ -50,6 +50,8 @@ footer{text-align:center;color:#7d92aa;padding:18px}
   <button class="nav active" data-page="overview">Overview</button>
   <button class="nav" data-page="brief">Daily Brief</button>
   <button class="nav" data-page="cot">COT Relationship</button>
+  <button class="nav" data-page="currencies">Currency Intelligence</button>
+  <button class="nav" data-page="pairs">Pair Rankings</button>
   <button class="nav" data-page="metals">Precious Metals</button>
   <button class="nav" data-page="markets">Global Markets</button>
   <button class="nav" data-page="bonds">Bonds & Rates</button>
@@ -59,7 +61,7 @@ footer{text-align:center;color:#7d92aa;padding:18px}
   <button class="nav" data-page="outlooks">Outlooks</button>
   <button class="nav" data-page="providers">Data Connections</button>
  </nav>
- <div class="version">Version 7.4<br>Calendar & Daily Brief</div>
+ <div class="version">Version 7.5<br>Currency & Pair Intelligence</div>
 </aside>
 
 <main class="content">
@@ -140,6 +142,42 @@ footer{text-align:center;color:#7d92aa;padding:18px}
  <article class="panel red">
   <div class="heading"><div><h3>10-week COT figures</h3><p>Commercial and Non-commercial rows can be hidden independently.</p></div></div>
   <div class="table-wrap"><table><thead id="cotHead"></thead><tbody id="cotBody"></tbody></table></div>
+ </article>
+</section>
+
+
+<section id="currencies" class="page">
+ <div class="hero"><div class="kicker">CURRENCY INTELLIGENCE</div><h2>Dedicated Currency Analysis</h2><p>Each major currency combines COT relationship, seasonality, relevant news, calendar risk, global regime and available rate evidence.</p></div>
+ <div class="controls">
+  <label>Currency <select id="currencyIntelSelect"></select></label>
+  <label>Horizon <select id="currencyHorizon"><option>Daily</option><option>Weekly</option><option>Monthly</option><option>6-Month</option><option>Yearly</option></select></label>
+ </div>
+ <div class="grid4">
+  <article class="metric"><span>Directional bias</span><strong id="currencyBias">—</strong><small>Evidence-weighted context</small></article>
+  <article class="metric"><span>Score</span><strong id="currencyScore">—</strong><small>0–100</small></article>
+  <article class="metric"><span>Confidence</span><strong id="currencyConfidence">—</strong><small>Available evidence</small></article>
+  <article class="metric"><span>Upcoming events</span><strong id="currencyEvents">—</strong><small>Next 14 days</small></article>
+ </div>
+ <div class="cols">
+  <article class="panel green"><div class="heading"><div><h3>Institutional relationship</h3><p>Commercial and Non-commercial interaction.</p></div></div><div id="currencyRelationship"></div></article>
+  <article class="panel blue"><div class="heading"><div><h3>Evidence</h3><p>Supporting and conflicting factors.</p></div></div><div id="currencyEvidence"></div></article>
+ </div>
+ <div class="cols">
+  <article class="panel purple"><div class="heading"><div><h3>Relevant financial news</h3><p>Latest stories tagged to the selected currency.</p></div></div><div id="currencyNews" class="news-list"></div></article>
+  <article class="panel red"><div class="heading"><div><h3>Upcoming calendar risks</h3><p>Events affecting the selected currency.</p></div></div><div id="currencyCalendar" class="calendar-list"></div></article>
+ </div>
+</section>
+
+<section id="pairs" class="page">
+ <div class="hero"><div class="kicker">PAIR RANKING ENGINE</div><h2>Strongest-versus-Weakest Currency Pairs</h2><p>Pairs are ranked by the difference between two currency evidence scores. This is a review shortlist, not an entry signal.</p></div>
+ <div class="controls">
+  <label>Horizon <select id="pairHorizon"><option>Daily</option><option>Weekly</option><option>Monthly</option><option>6-Month</option><option>Yearly</option></select></label>
+  <label>Show top <select id="pairCount"><option>5</option><option selected>10</option><option>15</option></select></label>
+ </div>
+ <div id="pairRankingCards" class="grid3"></div>
+ <article class="panel gold">
+  <div class="heading"><div><h3>Why this pair?</h3><p>Transparent evidence for the selected ranking.</p></div><select id="pairDetailSelect"></select></div>
+  <div id="pairDetail"></div>
  </article>
 </section>
 
@@ -287,7 +325,7 @@ footer{text-align:center;color:#7d92aa;padding:18px}
  <article class="panel green"><h3>Render environment variables</h3><p>Add these only when you have the relevant accounts:</p><div class="provider"><span>FRED_API_KEY</span><span>US yields and macro series</span></div><div class="provider"><span>TWELVE_DATA_API_KEY</span><span>Free Global Markets using liquid ETF proxies</span></div><div class="provider"><span>TRADING_ECONOMICS_API_KEY</span><span>Optional future official indices and economic calendar upgrade</span></div></article>
 </section>
 
-<footer>V6 uses live CFTC Legacy Futures Only and BBC feeds. Unconnected data is labelled pending; no market figures are fabricated.</footer>
+<footer>Version 7.5 uses transparent evidence scoring. Pair rankings are for technical review only; no trade is confirmed without TradingView structure alignment.</footer>
 </main>
 </div>
 
@@ -692,15 +730,100 @@ function renderOutlook(){
  const score=Math.round(50+total),bias=score>=60?"Bullish":score<=40?"Bearish":"Neutral",confidence=Math.min(100,Math.round(available/5*100));
  document.getElementById("outlookContent").innerHTML=`<div class="cols"><article class="outlook-card"><h4>${market} — ${activeHorizon}</h4><div class="score">${bias} ${score}/100</div><p>Confidence ${confidence}/100 based on ${available} of 5 planned evidence groups.</p><div class="evidence">${evidence.map(([a,b])=>`<div><span>${a}</span><strong>${b}</strong></div>`).join("")}</div></article><article class="interpretation ${bias.toLowerCase()}"><h4>Outlook explanation</h4><p>${r.explanation}</p><p>${season==null?"No seasonal data has been entered for this market.":`Current seasonal input is ${season>=0?"supportive":"opposing"} at ${season.toFixed(2)}%.`}</p><p>This is a directional outlook only. A trade is not confirmed until price and the TradingView structure model agree.</p></article></div>`;
 }
+
+function currencyEvidenceScore(market,horizon){
+ const r=relationship(market);
+ const evidence=[];
+ let score=50,available=1,totalGroups=6;
+ const denom=Math.max(1,Math.abs(r.commercial)+Math.abs(r.noncommercial));
+ const cotContribution=Math.max(-30,Math.min(30,r.relation/denom*30));
+ score+=cotContribution;
+ evidence.push({name:"COT relationship",value:r.bias,points:Math.round(cotContribution),available:true});
+
+ const season=seasonalScore(market,horizon);
+ if(season!=null){available++;const pts=Math.max(-15,Math.min(15,season*3));score+=pts;evidence.push({name:"Seasonality",value:`${season>=0?"Bullish":"Bearish"} ${season.toFixed(2)}%`,points:Math.round(pts),available:true});}
+ else evidence.push({name:"Seasonality",value:"Not entered",points:0,available:false});
+
+ const relevantNews=newsData.filter(n=>(n.affected_markets||[]).includes(market));
+ if(relevantNews.length){available++;const high=relevantNews.filter(n=>["Critical","High"].includes(n.importance||n.impact)).length;evidence.push({name:"Financial news",value:`${relevantNews.length} stories, ${high} high importance`,points:0,available:true});}
+ else evidence.push({name:"Financial news",value:"No tagged stories",points:0,available:false});
+
+ const upcoming=(calendarData.events||[]).filter(e=>{
+  const eventMarket=(e.currency||"").toUpperCase();
+  const future=e.date&&new Date(e.date)>=new Date();
+  return future&&(eventMarket===market||(e.effects||[]).includes(market));
+ });
+ if(upcoming.length){available++;evidence.push({name:"Economic calendar",value:`${upcoming.length} upcoming events`,points:0,available:true});}
+ else evidence.push({name:"Economic calendar",value:"No entered events",points:0,available:false});
+
+ if(marketsData.configured&&!marketsData.error){available++;let pts=0;
+  const regime=marketsData.risk_regime||"Mixed";
+  if(["AUD","NZD","CAD"].includes(market))pts=regime==="Risk-on"?8:regime==="Risk-off"?-8:0;
+  if(["JPY","CHF"].includes(market))pts=regime==="Risk-off"?8:regime==="Risk-on"?-8:0;
+  score+=pts;evidence.push({name:"Global risk regime",value:regime,points:pts,available:true});
+ } else evidence.push({name:"Global risk regime",value:"Not connected",points:0,available:false});
+
+ if(macroData.configured){available++;let pts=0;const us10=macroData.summaries?.US_10Y?.weekly_change;
+  if(market==="USD"&&us10!=null)pts=Math.max(-10,Math.min(10,us10*20));
+  score+=pts;evidence.push({name:"Rates evidence",value:market==="USD"?`US10Y weekly ${us10==null?"—":fredChange(us10)}`:"US-only data currently connected",points:Math.round(pts),available:true});
+ } else evidence.push({name:"Rates evidence",value:"FRED not connected",points:0,available:false});
+
+ score=Math.max(0,Math.min(100,Math.round(score)));
+ const confidence=Math.round(available/totalGroups*100);
+ const bias=score>=60?"Bullish":score<=40?"Bearish":"Neutral";
+ return {market,horizon,score,confidence,bias,evidence,relationship:r,upcoming,relevantNews};
+}
+function renderCurrencyIntelligence(){
+ const market=document.getElementById("currencyIntelSelect").value;
+ const horizon=document.getElementById("currencyHorizon").value;
+ const data=currencyEvidenceScore(market,horizon);
+ document.getElementById("currencyBias").textContent=data.bias;
+ document.getElementById("currencyScore").textContent=data.score+"/100";
+ document.getElementById("currencyConfidence").textContent=data.confidence+"/100";
+ document.getElementById("currencyEvents").textContent=data.upcoming.length;
+ document.getElementById("currencyRelationship").innerHTML=interpretationHTML(market);
+ document.getElementById("currencyEvidence").innerHTML=data.evidence.map(e=>`<div class="provider"><span>${e.name}<br><small>${e.value}</small></span><strong class="${e.available?"on":"off"}">${e.points>0?"+":""}${e.points}</strong></div>`).join("");
+ document.getElementById("currencyNews").innerHTML=data.relevantNews.slice(0,6).map(newsHTML).join("")||'<div class="message">No relevant tagged news.</div>';
+ document.getElementById("currencyCalendar").innerHTML=data.upcoming.slice(0,8).map(e=>`<article class="event"><div class="event-top"><div><h4>${e.event}</h4><p>${new Date(e.date).toLocaleString("en-GB")} • ${e.country||""}</p></div><span class="chip ${(e.impact||"Low").toLowerCase()}">${e.impact||"Low"}</span></div></article>`).join("")||'<div class="message">No upcoming entered events.</div>';
+}
+function pairRankings(horizon){
+ const scores=currencyMarkets.map(m=>currencyEvidenceScore(m,horizon));
+ const pairs=[];
+ scores.forEach(base=>scores.forEach(quote=>{
+  if(base.market===quote.market)return;
+  const gap=base.score-quote.score;
+  if(gap>0)pairs.push({pair:`${base.market}/${quote.market}`,base,quote,gap});
+ }));
+ return pairs.sort((a,b)=>b.gap-a.gap);
+}
+function renderPairRankings(){
+ const horizon=document.getElementById("pairHorizon").value;
+ const count=Number(document.getElementById("pairCount").value);
+ const rows=pairRankings(horizon).slice(0,count);
+ document.getElementById("pairRankingCards").innerHTML=rows.map((row,i)=>`<article class="outlook-card"><div class="score-top"><strong>#${i+1} ${row.pair}</strong><span class="score-big">${row.gap}</span></div><div class="track"><div class="fill" style="width:${Math.min(100,row.gap)}%"></div></div><div class="evidence"><div><span>${row.base.market}</span><strong>${row.base.score} ${row.base.bias}</strong></div><div><span>${row.quote.market}</span><strong>${row.quote.score} ${row.quote.bias}</strong></div><div><span>Confidence</span><strong>${Math.min(row.base.confidence,row.quote.confidence)}/100</strong></div></div></article>`).join("");
+ const select=document.getElementById("pairDetailSelect");
+ const previous=select.value;select.innerHTML=rows.map(r=>`<option value="${r.pair}">${r.pair}</option>`).join("");
+ if(rows.some(r=>r.pair===previous))select.value=previous;
+ renderPairDetail();
+}
+function renderPairDetail(){
+ const horizon=document.getElementById("pairHorizon").value;
+ const selected=document.getElementById("pairDetailSelect").value;
+ const row=pairRankings(horizon).find(r=>r.pair===selected);
+ if(!row){document.getElementById("pairDetail").innerHTML='<div class="message">No pair selected.</div>';return}
+ const evidence=(title,data)=>`<div class="outlook-card"><h4>${title}: ${data.market} — ${data.bias} ${data.score}/100</h4><div class="evidence">${data.evidence.map(e=>`<div><span>${e.name}</span><strong>${e.value}</strong></div>`).join("")}</div></div>`;
+ document.getElementById("pairDetail").innerHTML=`<div class="grid3"><div class="metric"><span>Pair difference</span><strong>${row.gap}</strong><small>${horizon}</small></div><div class="metric"><span>Review direction</span><strong>Long ${row.base.market}</strong><small>Against ${row.quote.market}</small></div><div class="metric"><span>Trade status</span><strong>Not confirmed</strong><small>Wait for TradingView structure</small></div></div><div class="cols">${evidence("Stronger currency",row.base)}${evidence("Weaker currency",row.quote)}</div><div class="interpretation neutral"><h4>Why this pair?</h4><p>${row.base.market} currently has a higher evidence score than ${row.quote.market} by ${row.gap} points. The ranking is a shortlist for chart review, not an instruction to enter.</p><p>Trade confirmation still requires your HTF → MTF → LTF structure alignment.</p></div>`;
+}
+
 async function loadAll(){
  try{
   const [cotRes,newsRes,providersRes,calendarRes,macroRes,marketsRes,briefRes]=await Promise.all([fetch("/api/cot"),fetch("/api/news"),fetch("/api/providers"),fetch("/api/calendar"),fetch("/api/macro"),fetch("/api/markets"),fetch("/api/brief")]);
   cotData=await cotRes.json();const newsPayload=await newsRes.json();newsMeta=newsPayload.data||newsPayload;newsData=newsMeta.items||[];providerData=await providersRes.json();calendarData=await calendarRes.json();macroData=await macroRes.json();marketsData=await marketsRes.json();briefData=await briefRes.json();
   document.getElementById("status").textContent="Live CFTC + BBC";document.getElementById("status").className="status live";
   document.getElementById("refreshTime").textContent="Last COT refresh: "+(cotData.last_refresh?.time?new Date(cotData.last_refresh.time).toLocaleString("en-GB"):"—");
-  populateSelect("overviewMarket",currencyMarkets);populateSelect("cotMarket",currencyMarkets);populateSelect("metalSelect",metalMarkets);populateSelect("outlookMarket",[...currencyMarkets,...metalMarkets]);
+  populateSelect("overviewMarket",currencyMarkets);populateSelect("cotMarket",currencyMarkets);populateSelect("metalSelect",metalMarkets);populateSelect("outlookMarket",[...currencyMarkets,...metalMarkets]);populateSelect("currencyIntelSelect",currencyMarkets);
   const nm=document.getElementById("newsMarket");nm.innerHTML='<option value="All">All</option>'+[...currencyMarkets,...metalMarkets,"GLOBAL"].map(x=>`<option>${x}</option>`).join("");populateNewsFilters();
-  renderRanking();renderInterpretations();renderCotChart();renderMetals();renderNews();renderCalendar();renderProviders();renderMarkets();renderFred();renderBrief();renderOutlook();
+  renderRanking();renderInterpretations();renderCotChart();renderMetals();renderNews();renderCalendar();renderProviders();renderMarkets();renderFred();renderBrief();renderOutlook();renderCurrencyIntelligence();renderPairRankings();
  }catch(error){document.getElementById("status").textContent="Load error";document.getElementById("status").className="status error";console.error(error)}
 }
 document.getElementById("overviewMarket").addEventListener("change",renderInterpretations);
@@ -717,6 +840,11 @@ document.querySelectorAll(".outlook-tab").forEach(b=>b.addEventListener("click",
 document.getElementById("outlookMarket").addEventListener("change",renderOutlook);
 document.getElementById("fredSeriesSelect").addEventListener("change",renderFredChart);
 document.getElementById("saveCalendarEvent").addEventListener("click",saveCalendarEvent);
+document.getElementById("currencyIntelSelect").addEventListener("change",renderCurrencyIntelligence);
+document.getElementById("currencyHorizon").addEventListener("change",renderCurrencyIntelligence);
+document.getElementById("pairHorizon").addEventListener("change",renderPairRankings);
+document.getElementById("pairCount").addEventListener("change",renderPairRankings);
+document.getElementById("pairDetailSelect").addEventListener("change",renderPairDetail);
 loadSeasonality();loadAll();
 </script>
 </body>
