@@ -12,6 +12,9 @@ from email.utils import parsedate_to_datetime
 from pathlib import Path
 from typing import Any
 
+from app.providers.intelligence import build_market_intelligence
+from app.providers.official_news import get_official_news
+
 import httpx
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from fastapi import BackgroundTasks, FastAPI, HTTPException
@@ -76,18 +79,11 @@ FREE_MARKET_PROXIES: dict[str, dict[str, str]] = {
     "UK": {"symbol": "EWU", "name": "United Kingdom", "benchmark": "FTSE / broad UK equities"},
     "US_LARGE": {"symbol": "SPY", "name": "US Large Cap", "benchmark": "S&P 500"},
     "US_TECH": {"symbol": "QQQ", "name": "US Technology", "benchmark": "Nasdaq 100"},
-    "US_DOW": {"symbol": "DIA", "name": "US Blue Chips", "benchmark": "Dow Jones"},
     "US_SMALL": {"symbol": "IWM", "name": "US Small Cap", "benchmark": "Russell 2000"},
-    "GERMANY": {"symbol": "EWG", "name": "Germany", "benchmark": "German equities / DAX context"},
-    "FRANCE": {"symbol": "EWQ", "name": "France", "benchmark": "French equities / CAC context"},
     "EUROPE": {"symbol": "VGK", "name": "Europe", "benchmark": "Broad developed Europe"},
     "JAPAN": {"symbol": "EWJ", "name": "Japan", "benchmark": "Japanese equities / Nikkei context"},
-    "HONG_KONG": {"symbol": "EWH", "name": "Hong Kong", "benchmark": "Hong Kong equities"},
     "CHINA": {"symbol": "FXI", "name": "China Large Cap", "benchmark": "Large Chinese equities"},
     "AUSTRALIA": {"symbol": "EWA", "name": "Australia", "benchmark": "Australian equities / ASX context"},
-    "CANADA": {"symbol": "EWC", "name": "Canada", "benchmark": "Canadian equities / TSX context"},
-    "INDIA": {"symbol": "INDA", "name": "India", "benchmark": "Indian equities / Nifty context"},
-    "BRAZIL": {"symbol": "EWZ", "name": "Brazil", "benchmark": "Brazilian equities / Bovespa context"},
 }
 
 COUNTRY_RULES = {
@@ -673,6 +669,12 @@ def save_seasonality(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 
+_market_cache: dict[str, Any] | None = None
+_market_cache_time: datetime | None = None
+_market_cache_lock = asyncio.Lock()
+MARKET_CACHE_TTL = timedelta(minutes=15)
+
+
 def _change_pct(values: list[dict[str, Any]], periods_back: int) -> float | None:
     if len(values) <= periods_back:
         return None
@@ -684,6 +686,16 @@ def _change_pct(values: list[dict[str, Any]], periods_back: int) -> float | None
 
 
 async def twelve_data_free_markets() -> dict[str, Any]:
+    global _market_cache, _market_cache_time
+
+    now = datetime.now(timezone.utc)
+    if (
+        _market_cache is not None
+        and _market_cache_time is not None
+        and now - _market_cache_time < MARKET_CACHE_TTL
+    ):
+        return _market_cache
+
     api_key = os.getenv("TWELVE_DATA_API_KEY")
     if not api_key:
         return {
@@ -703,8 +715,41 @@ async def twelve_data_free_markets() -> dict[str, Any]:
         "format": "JSON",
     }
 
-    async with httpx.AsyncClient(timeout=60) as client:
-        response = await client.get("https://api.twelvedata.com/time_series", params=params)
+    async with _market_cache_lock:
+        now = datetime.now(timezone.utc)
+        if (
+            _market_cache is not None
+            and _market_cache_time is not None
+            and now - _market_cache_time < MARKET_CACHE_TTL
+        ):
+            return _market_cache
+
+        async with httpx.AsyncClient(timeout=60) as client:
+            response = await client.get(
+                "https://api.twelvedata.com/time_series",
+                params=params,
+            )
+
+        if response.status_code == 429:
+            if _market_cache is not None:
+                cached = dict(_market_cache)
+                cached["stale"] = True
+                cached["message"] = (
+                    "Twelve Data rate limit reached. Showing the most recent cached market data."
+                )
+                return cached
+            return {
+                "configured": True,
+                "provider": "Twelve Data free tier",
+                "markets": [],
+                "rate_limited": True,
+                "message": (
+                    "Twelve Data free-plan rate limit reached. "
+                    "Wait one minute and refresh the page."
+                ),
+                "proxy_note": "Free plan supports 8 API credits per minute.",
+            }
+
         response.raise_for_status()
         raw = response.json()
 
@@ -775,7 +820,7 @@ async def twelve_data_free_markets() -> dict[str, Any]:
         else "Mixed"
     )
 
-    return {
+    result = {
         "configured": True,
         "provider": "Twelve Data free tier",
         "markets": markets,
@@ -786,7 +831,11 @@ async def twelve_data_free_markets() -> dict[str, Any]:
             "These are liquid US-listed ETF proxies used for free macro context. "
             "They are not official index levels and can differ because of currency, fees and trading hours."
         ),
+        "cache_minutes": 15,
     }
+    _market_cache = result
+    _market_cache_time = datetime.now(timezone.utc)
+    return result
 
 
 scheduler = AsyncIOScheduler(timezone="UTC")
@@ -811,7 +860,7 @@ async def lifespan(_: FastAPI):
     scheduler.shutdown(wait=False)
 
 
-app = FastAPI(title="Institutional Macro Dashboard Cloud v6.2 Free Markets", lifespan=lifespan)
+app = FastAPI(title="Institutional Market Intelligence Terminal v7.1 Markets Hotfix", lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
@@ -857,7 +906,9 @@ async def manual_refresh() -> dict[str, Any]:
 
 @app.get("/api/news")
 async def news() -> dict[str, Any]:
-    return await bbc_news()
+    result = await get_official_news()
+    return result.as_dict()
+
 
 
 @app.get("/api/calendar")
@@ -883,6 +934,21 @@ async def post_seasonality(payload: dict[str, Any]) -> dict[str, Any]:
 @app.get("/api/markets")
 async def markets() -> dict[str, Any]:
     return await twelve_data_free_markets()
+
+
+@app.get("/api/intelligence")
+async def intelligence() -> dict[str, Any]:
+    cot_payload = build_payload()
+    try:
+        markets_payload = await twelve_data_free_markets()
+    except Exception as exc:  # noqa: BLE001
+        markets_payload = {"configured": False, "markets": [], "error": str(exc)}
+    news_result = await get_official_news()
+    return build_market_intelligence(
+        cot_payload=cot_payload,
+        markets_payload=markets_payload,
+        news_payload=news_result.data,
+    )
 
 
 @app.get("/api/providers")
