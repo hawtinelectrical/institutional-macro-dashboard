@@ -87,6 +87,33 @@ FREE_MARKET_PROXIES: dict[str, dict[str, str]] = {
     "AUSTRALIA": {"symbol": "EWA", "name": "Australia", "benchmark": "Australian equities / ASX context"},
 }
 
+# Automatic seasonality is calculated from monthly closing prices.
+# The free Twelve Data plan is respected by splitting the universe into
+# two groups of no more than eight symbols.
+AUTO_SEASONALITY_GROUPS: dict[str, dict[str, dict[str, Any]]] = {
+    "core": {
+        "USD": {"symbol": "UUP", "invert": False, "label": "US Dollar proxy"},
+        "EUR": {"symbol": "EUR/USD", "invert": False, "label": "Euro vs US Dollar"},
+        "GBP": {"symbol": "GBP/USD", "invert": False, "label": "British Pound vs US Dollar"},
+        "JPY": {"symbol": "USD/JPY", "invert": True, "label": "Japanese Yen vs US Dollar"},
+        "CHF": {"symbol": "USD/CHF", "invert": True, "label": "Swiss Franc vs US Dollar"},
+        "CAD": {"symbol": "USD/CAD", "invert": True, "label": "Canadian Dollar vs US Dollar"},
+        "AUD": {"symbol": "AUD/USD", "invert": False, "label": "Australian Dollar vs US Dollar"},
+        "NZD": {"symbol": "NZD/USD", "invert": False, "label": "New Zealand Dollar vs US Dollar"},
+    },
+    "assets": {
+        "GOLD": {"symbol": "XAU/USD", "invert": False, "label": "Gold"},
+        "SILVER": {"symbol": "XAG/USD", "invert": False, "label": "Silver"},
+        "SP500": {"symbol": "SPY", "invert": False, "label": "S&P 500 ETF proxy"},
+        "FTSE100": {"symbol": "EWU", "invert": False, "label": "UK equity ETF proxy"},
+        "NASDAQ100": {"symbol": "QQQ", "invert": False, "label": "Nasdaq 100 ETF proxy"},
+        "JAPAN": {"symbol": "EWJ", "invert": False, "label": "Japan equity ETF proxy"},
+        "CHINA": {"symbol": "FXI", "invert": False, "label": "China large-cap ETF proxy"},
+        "AUSTRALIA_EQ": {"symbol": "EWA", "invert": False, "label": "Australia equity ETF proxy"},
+    },
+}
+
+
 COUNTRY_RULES = {
     "USD": ("United States", ["dollar", "fed", "federal reserve", "us economy", "treasury", "wall street"]),
     "GBP": ("United Kingdom", ["sterling", "bank of england", "uk economy", "britain", "ftse"]),
@@ -1501,6 +1528,283 @@ def seasonality_horizon_summary(
     }
 
 
+
+_auto_seasonality_lock = asyncio.Lock()
+
+
+def _average(values: list[float]) -> float:
+    return round(sum(values) / len(values), 4) if values else 0.0
+
+
+def _monthly_returns_from_values(
+    values: list[dict[str, Any]],
+    invert: bool,
+) -> dict[int, list[tuple[int, float]]]:
+    parsed: list[tuple[date, float]] = []
+    for row in values:
+        raw_date = str(row.get("datetime", ""))[:10]
+        raw_close = row.get("close")
+        if not raw_date or raw_close in (None, ""):
+            continue
+        try:
+            dt = date.fromisoformat(raw_date)
+            close = float(raw_close)
+            if close <= 0:
+                continue
+            adjusted = 1.0 / close if invert else close
+            parsed.append((dt, adjusted))
+        except (TypeError, ValueError):
+            continue
+
+    parsed.sort(key=lambda item: item[0])
+    returns: dict[int, list[tuple[int, float]]] = {month: [] for month in range(1, 13)}
+    for index in range(1, len(parsed)):
+        current_date, current_close = parsed[index]
+        _, previous_close = parsed[index - 1]
+        if previous_close == 0:
+            continue
+        monthly_return = (current_close / previous_close - 1.0) * 100.0
+        returns[current_date.month].append((current_date.year, monthly_return))
+    return returns
+
+
+def _window_values(
+    observations: list[tuple[int, float]],
+    years: int,
+) -> list[float]:
+    if not observations:
+        return []
+    latest_year = max(year for year, _ in observations)
+    cutoff = latest_year - years + 1
+    return [value for year, value in observations if year >= cutoff]
+
+
+def _upsert_auto_seasonality(
+    market: str,
+    returns_by_month: dict[int, list[tuple[int, float]]],
+    source_label: str,
+    symbol: str,
+) -> None:
+    now = datetime.now(timezone.utc)
+    with Session(engine) as session:
+        for month_number in range(1, 13):
+            observations = returns_by_month.get(month_number, [])
+            values_5 = _window_values(observations, 5)
+            values_10 = _window_values(observations, 10)
+            values_20 = _window_values(observations, 20)
+            values_for_win_rate = values_20 or values_10 or values_5
+
+            profile = session.get(
+                SeasonalityProfile,
+                {"market": market, "month_number": month_number},
+            )
+            if profile is None:
+                profile = SeasonalityProfile(
+                    market=market,
+                    month_number=month_number,
+                    average_5y=0.0,
+                    average_10y=0.0,
+                    average_20y=0.0,
+                    win_rate=50.0,
+                    sample_years=0,
+                    notes="",
+                    updated_at=now,
+                )
+                session.add(profile)
+
+            profile.average_5y = _average(values_5)
+            profile.average_10y = _average(values_10)
+            profile.average_20y = _average(values_20)
+            profile.win_rate = (
+                round(
+                    sum(1 for value in values_for_win_rate if value > 0)
+                    / len(values_for_win_rate)
+                    * 100,
+                    1,
+                )
+                if values_for_win_rate
+                else 50.0
+            )
+            profile.sample_years = len(values_for_win_rate)
+            profile.notes = (
+                f"Automatic: {source_label} ({symbol}); monthly close-to-close returns. "
+                f"Updated {now.date().isoformat()}."
+            )
+            profile.updated_at = now
+
+        session.commit()
+
+
+async def _fetch_monthly_history(
+    client: httpx.AsyncClient,
+    symbol: str,
+    api_key: str,
+) -> dict[str, Any]:
+    response = await client.get(
+        "https://api.twelvedata.com/time_series",
+        params={
+            "symbol": symbol,
+            "interval": "1month",
+            "outputsize": 300,
+            "apikey": api_key,
+            "format": "JSON",
+            "order": "ASC",
+        },
+    )
+    if response.status_code == 429:
+        return {
+            "status": "error",
+            "code": 429,
+            "message": "Twelve Data free-plan rate limit reached.",
+        }
+    response.raise_for_status()
+    return response.json()
+
+
+async def refresh_auto_seasonality(group: str) -> dict[str, Any]:
+    if group not in AUTO_SEASONALITY_GROUPS:
+        return {
+            "status": "error",
+            "message": f"Unknown group: {group}",
+            "allowed_groups": list(AUTO_SEASONALITY_GROUPS),
+        }
+
+    api_key = os.getenv("TWELVE_DATA_API_KEY")
+    if not api_key:
+        return {
+            "status": "not_configured",
+            "message": "Add TWELVE_DATA_API_KEY in Render.",
+            "group": group,
+        }
+
+    if _auto_seasonality_lock.locked():
+        return {
+            "status": "already_running",
+            "message": "Another automatic seasonality refresh is already running.",
+            "group": group,
+        }
+
+    definitions = AUTO_SEASONALITY_GROUPS[group]
+    results = []
+    async with _auto_seasonality_lock:
+        async with httpx.AsyncClient(timeout=75, follow_redirects=True) as client:
+            for market, definition in definitions.items():
+                symbol = definition["symbol"]
+                try:
+                    payload = await _fetch_monthly_history(client, symbol, api_key)
+                    if payload.get("status") == "error":
+                        results.append(
+                            {
+                                "market": market,
+                                "symbol": symbol,
+                                "status": "error",
+                                "message": payload.get("message", "Provider error"),
+                            }
+                        )
+                        continue
+
+                    values = payload.get("values", [])
+                    if len(values) < 24:
+                        results.append(
+                            {
+                                "market": market,
+                                "symbol": symbol,
+                                "status": "insufficient_history",
+                                "observations": len(values),
+                            }
+                        )
+                        continue
+
+                    returns_by_month = _monthly_returns_from_values(
+                        values,
+                        bool(definition.get("invert")),
+                    )
+                    _upsert_auto_seasonality(
+                        market=market,
+                        returns_by_month=returns_by_month,
+                        source_label=definition["label"],
+                        symbol=symbol,
+                    )
+                    results.append(
+                        {
+                            "market": market,
+                            "symbol": symbol,
+                            "status": "updated",
+                            "observations": len(values),
+                        }
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    logger.exception("Automatic seasonality failed for %s", market)
+                    results.append(
+                        {
+                            "market": market,
+                            "symbol": symbol,
+                            "status": "error",
+                            "message": str(exc),
+                        }
+                    )
+
+    completed_at = datetime.now(timezone.utc)
+    with Session(engine) as session:
+        status = session.get(AppStatus, f"auto_seasonality_{group}")
+        value = json.dumps(
+            {
+                "group": group,
+                "completed_at": completed_at.isoformat(),
+                "results": results,
+            }
+        )
+        if status is None:
+            session.add(
+                AppStatus(
+                    key=f"auto_seasonality_{group}",
+                    value=value,
+                )
+            )
+        else:
+            status.value = value
+        session.commit()
+
+    updated = sum(1 for row in results if row["status"] == "updated")
+    return {
+        "status": "complete",
+        "group": group,
+        "updated": updated,
+        "total": len(results),
+        "results": results,
+        "completed_at": completed_at.isoformat(),
+    }
+
+
+def auto_seasonality_status() -> dict[str, Any]:
+    groups = {}
+    with Session(engine) as session:
+        for group in AUTO_SEASONALITY_GROUPS:
+            row = session.get(AppStatus, f"auto_seasonality_{group}")
+            if row is None:
+                groups[group] = None
+            else:
+                try:
+                    groups[group] = json.loads(row.value)
+                except json.JSONDecodeError:
+                    groups[group] = {"raw": row.value}
+
+    return {
+        "configured": bool(os.getenv("TWELVE_DATA_API_KEY")),
+        "groups": groups,
+        "universe": AUTO_SEASONALITY_GROUPS,
+        "schedule": {
+            "core": "First day of each month at 03:10 UTC",
+            "assets": "First day of each month at 03:20 UTC",
+        },
+        "methodology": (
+            "Monthly close-to-close returns are grouped by calendar month. "
+            "The 5-, 10- and 20-year averages use the latest available years. "
+            "Win rate uses the 20-year window when available."
+        ),
+    }
+
+
 scheduler = AsyncIOScheduler(timezone="UTC")
 
 
@@ -1516,6 +1820,26 @@ async def lifespan(_: FastAPI):
         id="weekly-cot-refresh",
         replace_existing=True,
     )
+    scheduler.add_job(
+        refresh_auto_seasonality,
+        "cron",
+        day=1,
+        hour=3,
+        minute=10,
+        args=["core"],
+        id="monthly-auto-seasonality-core",
+        replace_existing=True,
+    )
+    scheduler.add_job(
+        refresh_auto_seasonality,
+        "cron",
+        day=1,
+        hour=3,
+        minute=20,
+        args=["assets"],
+        id="monthly-auto-seasonality-assets",
+        replace_existing=True,
+    )
     scheduler.start()
     if is_stale():
         asyncio.create_task(refresh_cot())
@@ -1523,7 +1847,7 @@ async def lifespan(_: FastAPI):
     scheduler.shutdown(wait=False)
 
 
-app = FastAPI(title="Institutional Market Intelligence Terminal v8 Seasonality and Alignment", lifespan=lifespan)
+app = FastAPI(title="Institutional Market Intelligence Terminal v8.1 Automatic Seasonality", lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
@@ -1630,6 +1954,19 @@ async def get_market_seasonality(
     if metric not in allowed:
         raise HTTPException(status_code=400, detail="Unsupported seasonality metric.")
     return seasonality_horizon_summary(market, metric)
+
+
+@app.get("/api/seasonality/auto/status")
+async def get_auto_seasonality_status() -> dict[str, Any]:
+    return auto_seasonality_status()
+
+
+@app.post("/api/seasonality/auto/refresh/{group}")
+async def run_auto_seasonality_refresh(group: str) -> dict[str, Any]:
+    result = await refresh_auto_seasonality(group)
+    if result.get("status") == "error":
+        raise HTTPException(status_code=400, detail=result.get("message"))
+    return result
 
 
 @app.get("/api/markets")
