@@ -1,35 +1,50 @@
-# Institutional Macro Dashboard — Cloud v5
+# Institutional Market Intelligence Terminal — Cloud v6
 
-Version 5 expands the live terminal while preserving the working CFTC backend.
+## Live without extra keys
 
-## Live now
-
-- CFTC Legacy Futures-Only feed
+- CFTC Legacy Futures-Only COT data
 - Commercial and Non-commercial positions
 - 8 major currencies
-- 10-week tables and weekly changes
-- COT-flow currency rankings
-- strongest-versus-weakest pair shortlist
-- pair matrix
-- COT trend chart
-- transparent partial confluence scoring
+- Gold, silver, platinum and palladium COT
+- Commercial / Non-commercial on-off controls
+- net-position and weekly buying/selling line graphs
+- relationship interpretation engine
+- BBC Business, World and UK RSS feeds
+- news impact, country, market and effects classification
+- editable browser-saved seasonality heatmap
+- daily, weekly, monthly, 6-month and yearly outlook framework
 
-## Prepared but not yet connected
+## Optional provider keys
 
-- sovereign bond yields
-- policy rates and central-bank bias
-- DXY / risk context
-- economic calendar and news
-- TradingView HTF / MTF / LTF alignment
+Add these in Render → Environment:
 
-Pending components are labelled clearly and are not assigned invented values.
+- `FRED_API_KEY`
+  - US 2Y, 10Y, 30Y yields
+  - Fed funds
+  - US 10Y real yield
 
-## Update the live site
+- `TRADING_ECONOMICS_API_KEY`
+  - economic calendar
+  - global stock indices
+  - precious-metal prices
+  - wider market feeds, subject to subscription permissions
 
-Replace:
+## Important interpretation
+
+The V6 relationship engine follows this requested model:
+
+- Commercial selling + Non-commercial buying = bullish relationship
+- Commercial buying + Non-commercial selling = bearish relationship
+
+This is directional context, not standalone entry timing. Price and the TradingView structure model should confirm entries.
+
+## Update live site
+
+Replace in GitHub:
 
 - `app/main.py`
 - `app/static/index.html`
+- `requirements.txt`
 - `README.md`
 
-Commit to GitHub. Render auto-deploys.
+Commit. Render auto-deploys.
