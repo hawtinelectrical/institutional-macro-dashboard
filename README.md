@@ -1,69 +1,44 @@
-# Version 8.1 — Automatic Online Seasonality
+# Version 8.2 — Dollar Index and Automatic Seasonality
 
-## What this adds
+## Dedicated Dollar Index module
 
-The dashboard now calculates seasonality from historical monthly prices rather
-than requiring every heatmap cell to be entered manually.
+The automatic seasonality engine now has a separate Dollar Index refresh group.
 
-For each configured market it calculates:
+It tries the provider symbols in this order:
 
-- 5-year average monthly return
-- 10-year average monthly return
-- 20-year average monthly return
-- Monthly win rate
-- Available sample years
-- Automatic source note and refresh date
+1. `DXY`
+2. `DXY:ICE`
+3. `UUP` as a transparent ETF fallback
 
-The results are stored in PostgreSQL and immediately feed:
+The selected source is stored in the seasonality notes and displayed on the
+dashboard. UUP is never presented as the official DXY index.
 
-- seasonal heatmaps
-- seasonal curves
-- currency intelligence
-- pair rankings
-- Institutional Alignment
+## USD integration
 
-## Free-plan protection
+When a DXY profile with real historical observations exists, the dashboard
+uses DXY as the preferred seasonal input for USD scoring. The older UUP-based
+USD profile remains available as a fallback.
 
-Twelve Data's free allowance is protected by two groups of eight symbols:
+## Calculations
 
-### Core currencies
+For DXY, the dashboard calculates:
 
-- USD proxy
-- EUR
-- GBP
-- JPY
-- CHF
-- CAD
-- AUD
-- NZD
+- 5-year monthly average return
+- 10-year monthly average return
+- 20-year monthly average return
+- monthly win rate
+- sample years
+- reliability
+- seasonal curve
+- current-month, six-month and yearly tendency
 
-### Assets
+## Refresh schedule
 
-- Gold
-- Silver
-- S&P 500 proxy
-- FTSE 100 / UK equities proxy
-- Nasdaq 100 proxy
-- Japan equity proxy
-- China equity proxy
-- Australia equity proxy
-
-The scheduler runs:
-
-- Core: first day of each month at 03:10 UTC
+- Currencies: first day of each month at 03:10 UTC
 - Assets: first day of each month at 03:20 UTC
+- Dollar Index: first day of each month at 03:30 UTC
 
-The page also provides separate manual refresh buttons. Do not run both groups
-within the same minute on the free plan.
-
-## Methodology
-
-Monthly close-to-close returns are grouped by calendar month. Inverted forex
-quotes such as USD/JPY are converted to the currency's own perspective before
-returns are calculated.
-
-ETF-based regional data is clearly labelled as a proxy and is not presented as
-an official cash-index value.
+Leave at least one minute between manual refresh buttons on the free plan.
 
 ## Update GitHub
 
@@ -77,4 +52,4 @@ Keep the existing `app/providers/` folder.
 
 Commit with:
 
-`Version 8.1 automatic seasonality`
+`Version 8.2 Dollar Index`
