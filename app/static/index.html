@@ -51,13 +51,14 @@ footer{text-align:center;color:#7d92aa;padding:18px}
   <button class="nav" data-page="cot">COT Relationship</button>
   <button class="nav" data-page="metals">Precious Metals</button>
   <button class="nav" data-page="markets">Global Markets</button>
+  <button class="nav" data-page="bonds">Bonds & Rates</button>
   <button class="nav" data-page="news">News Intelligence</button>
   <button class="nav" data-page="calendar">Economic Calendar</button>
   <button class="nav" data-page="seasonality">Seasonality</button>
   <button class="nav" data-page="outlooks">Outlooks</button>
   <button class="nav" data-page="providers">Data Connections</button>
  </nav>
- <div class="version">Cloud Edition V6.2<br>Free Global Markets</div>
+ <div class="version">Version 7.2<br>FRED Bonds & Rates</div>
 </aside>
 
 <main class="content">
@@ -69,7 +70,7 @@ footer{text-align:center;color:#7d92aa;padding:18px}
 </div>
 
 <section id="overview" class="page active">
- <div class="hero"><div class="kicker">VERSION 6</div><h2>Institutional Market Intelligence Terminal</h2><p>Follow the relationship between Commercial and Non-commercial traders, then confirm it with metals, global markets, news, events and seasonality.</p></div>
+ <div class="hero"><div class="kicker">VERSION 7 FOUNDATION</div><h2>Institutional Market Intelligence Terminal</h2><p>Follow the relationship between Commercial and Non-commercial traders, then confirm it with metals, global markets, news, events and seasonality.</p></div>
  <div class="grid4">
   <article class="metric"><span>Strongest bullish relationship</span><strong id="bestMarket">—</strong><small>Commercial selling / Non-commercial buying</small></article>
   <article class="metric"><span>Strongest bearish relationship</span><strong id="worstMarket">—</strong><small>Commercial buying / Non-commercial selling</small></article>
@@ -81,6 +82,14 @@ footer{text-align:center;color:#7d92aa;padding:18px}
   <article class="panel purple"><div class="heading"><div><h3>Current interpretation</h3><p>Relationship logic separated from trade timing.</p></div><select id="overviewMarket"></select></div><div id="overviewInterpretation"></div></article>
  </div>
  <div class="cols">
+  <article class="panel blue">
+ <div class="heading"><div><h3>Version 7 evidence rules</h3><p>Transparent architecture for every future score.</p></div></div>
+ <div class="provider"><span>COT relationship</span><strong>Live</strong></div>
+ <div class="provider"><span>Global market regime</span><strong>Free ETF proxies when connected</strong></div>
+ <div class="provider"><span>Official central-bank news</span><strong>Live RSS</strong></div>
+ <div class="provider"><span>Price / TradingView confirmation</span><strong>Required before trade confirmation</strong></div>
+</article>
+
   <article class="panel cyan"><div class="heading"><div><h3>Latest high-impact news</h3><p>BBC feed classification by affected market and country.</p></div></div><div id="overviewNews" class="news-list"></div></article>
   <article class="panel gold"><div class="heading"><div><h3>Data coverage</h3><p>Live and pending provider status.</p></div></div><div id="overviewProviders"></div></article>
  </div>
@@ -127,6 +136,56 @@ footer{text-align:center;color:#7d92aa;padding:18px}
   <div class="outlook-card"><h4>Europe</h4><p>Euro Stoxx 50, DAX, CAC 40, SMI, IBEX, FTSE MIB</p></div>
   <div class="outlook-card"><h4>Asia-Pacific</h4><p>Nikkei, TOPIX, Hang Seng, CSI 300, KOSPI, Nifty, ASX 200</p></div>
  </div></article>
+</section>
+
+
+<section id="bonds" class="page">
+ <div class="hero">
+  <div class="kicker">FRED BONDS & RATES</div>
+  <h2>US Treasury Yields, Real Yields and Fed Policy</h2>
+  <p>Official Federal Reserve Economic Data for the US yield curve, policy rate, real yields and inflation expectations.</p>
+ </div>
+
+ <div id="fredMessage" class="message"></div>
+
+ <div class="grid4" id="fredMetricCards"></div>
+
+ <div class="cols">
+  <article class="panel blue">
+   <div class="heading">
+    <div>
+     <h3>Selected FRED series</h3>
+     <p>Latest 120 valid observations.</p>
+    </div>
+    <select id="fredSeriesSelect"></select>
+   </div>
+   <div id="fredChart" class="chart-wrap"></div>
+  </article>
+
+  <article class="panel gold">
+   <div class="heading">
+    <div>
+     <h3>Yield-curve interpretation</h3>
+     <p>2s10s and 10s30s spreads.</p>
+    </div>
+   </div>
+   <div id="yieldCurveInterpretation"></div>
+  </article>
+ </div>
+
+ <article class="panel purple">
+  <div class="heading">
+   <div>
+    <h3>Macro transmission</h3>
+    <p>How the current rates picture contributes to currencies, metals and equities.</p>
+   </div>
+  </div>
+  <div class="grid3">
+   <div class="outlook-card"><h4>USD</h4><p>Rising nominal and real yields can support USD, subject to growth and risk context.</p></div>
+   <div class="outlook-card"><h4>Gold & Silver</h4><p>Higher real yields can be a headwind; falling real yields can be supportive.</p></div>
+   <div class="outlook-card"><h4>Equities</h4><p>Rapid yield increases can pressure valuations, while falling yields may support risk assets.</p></div>
+  </div>
+ </article>
 </section>
 
 <section id="news" class="page">
@@ -312,6 +371,79 @@ function renderProviders(){
  document.getElementById("providerList").innerHTML=html;document.getElementById("overviewProviders").innerHTML=html;
  document.getElementById("providerCount").textContent=Object.values(providerData).filter(x=>x.configured).length;
 }
+
+function fredChange(value){
+ if(value==null)return "—";
+ return `${value>0?"+":""}${Number(value).toFixed(3)} pp`;
+}
+function renderFred(){
+ const message=document.getElementById("fredMessage");
+ const cards=document.getElementById("fredMetricCards");
+ const select=document.getElementById("fredSeriesSelect");
+
+ if(!macroData?.configured){
+  message.textContent=macroData?.message||"FRED is not connected.";
+  cards.innerHTML="";
+  return;
+ }
+
+ message.textContent="";
+ const summaries=macroData.summaries||{};
+ const priority=["FED_FUNDS","US_2Y","US_10Y","US_30Y","REAL_10Y","BREAKEVEN_10Y"];
+
+ cards.innerHTML=priority.slice(0,4).map(key=>{
+  const row=summaries[key]||{};
+  return `<article class="metric">
+   <span>${row.name||key}</span>
+   <strong>${row.latest==null?"—":Number(row.latest).toFixed(3)+"%"}</strong>
+   <small>${row.latest_date||""}<br>Weekly ${fredChange(row.weekly_change)}</small>
+  </article>`;
+ }).join("");
+
+ select.innerHTML=Object.entries(summaries).map(([key,row])=>`<option value="${key}">${row.name||key}</option>`).join("");
+ if(!select.value&&priority.length)select.value=priority[2];
+ renderFredChart();
+
+ const curve=macroData.yield_curve||{};
+ const interpretation=(macroData.interpretation||[]).map(x=>`<p>${x}</p>`).join("");
+ document.getElementById("yieldCurveInterpretation").innerHTML=`
+  <div class="interpretation neutral">
+   <h4>${curve.state||"Unavailable"}</h4>
+   <p><strong>2s10s:</strong> ${curve.curve_2s10s==null?"—":Number(curve.curve_2s10s).toFixed(3)+" pp"}</p>
+   <p><strong>10s30s:</strong> ${curve.curve_10s30s==null?"—":Number(curve.curve_10s30s).toFixed(3)+" pp"}</p>
+   ${interpretation}
+  </div>`;
+}
+function renderFredChart(){
+ const key=document.getElementById("fredSeriesSelect").value;
+ const rows=macroData?.series?.[key]||[];
+ const target=document.getElementById("fredChart");
+ if(!rows.length){
+  target.innerHTML='<div class="message">No FRED observations available.</div>';
+  return;
+ }
+ const width=760,height=290,pad=42;
+ const values=rows.map(r=>r.value).filter(v=>v!=null);
+ const min=Math.min(...values),max=Math.max(...values);
+ const x=i=>pad+i*(width-pad*2)/Math.max(1,rows.length-1);
+ const y=v=>height-pad-(v-min)/(max-min||1)*(height-pad*2);
+ let grid="";
+ for(let i=0;i<5;i++){
+  const gy=pad+i*(height-pad*2)/4;
+  grid+=`<line class="gridline" x1="${pad}" y1="${gy}" x2="${width-pad}" y2="${gy}"/>`;
+ }
+ const points=rows.map((r,i)=>`${x(i)},${y(r.value)}`).join(" ");
+ const labels=rows.filter((_,i)=>i%20===0||i===rows.length-1).map((r,i)=>{
+  const originalIndex=rows.indexOf(r);
+  return `<text x="${x(originalIndex)}" y="${height-8}" text-anchor="middle" fill="#8fa5bb" font-size="10">${r.date.slice(5)}</text>`;
+ }).join("");
+ target.innerHTML=`<svg viewBox="0 0 ${width} ${height}">
+  ${grid}
+  <polyline style="fill:none;stroke:#318fff;stroke-width:3" points="${points}"/>
+  ${labels}
+ </svg>`;
+}
+
 function marketChange(value){
  if(value==null)return "—";
  return `${value>0?"+":""}${value.toFixed(2)}%`;
@@ -389,7 +521,18 @@ function renderOutlook(){
  evidence.push(["COT relationship",`${r.bias} (${relationContribution.toFixed(0)})`]);
  if(season!=null){available++;total+=Math.max(-25,Math.min(25,season*5));evidence.push(["Seasonality",`${season.toFixed(2)}% tendency`])}
  const relevantNews=newsData.filter(n=>n.affected_markets.includes(market)&&n.impact==="High").length;if(relevantNews){available++;evidence.push(["High-impact news",`${relevantNews} current stories`])}
- if(macroData.configured){available++;evidence.push(["FRED macro",`Connected`])}
+ if(macroData.configured){
+  available++;
+  const realYield=macroData.summaries?.REAL_10Y?.latest;
+  const tenYear=macroData.summaries?.US_10Y?.latest;
+  evidence.push(["FRED rates",`US10Y ${tenYear==null?"—":Number(tenYear).toFixed(2)+"%"} | Real10Y ${realYield==null?"—":Number(realYield).toFixed(2)+"%"}`]);
+  if(market==="USD"&&macroData.summaries?.US_10Y?.weekly_change!=null){
+    total+=Math.max(-10,Math.min(10,macroData.summaries.US_10Y.weekly_change*20));
+  }
+  if(["GOLD","SILVER"].includes(market)&&macroData.summaries?.REAL_10Y?.weekly_change!=null){
+    total-=Math.max(-10,Math.min(10,macroData.summaries.REAL_10Y.weekly_change*20));
+  }
+}
  if(marketsData.configured&&!marketsData.error){available++;evidence.push(["Global markets",`Connected`])}
  const score=Math.round(50+total),bias=score>=60?"Bullish":score<=40?"Bearish":"Neutral",confidence=Math.min(100,Math.round(available/5*100));
  document.getElementById("outlookContent").innerHTML=`<div class="cols"><article class="outlook-card"><h4>${market} — ${activeHorizon}</h4><div class="score">${bias} ${score}/100</div><p>Confidence ${confidence}/100 based on ${available} of 5 planned evidence groups.</p><div class="evidence">${evidence.map(([a,b])=>`<div><span>${a}</span><strong>${b}</strong></div>`).join("")}</div></article><article class="interpretation ${bias.toLowerCase()}"><h4>Outlook explanation</h4><p>${r.explanation}</p><p>${season==null?"No seasonal data has been entered for this market.":`Current seasonal input is ${season>=0?"supportive":"opposing"} at ${season.toFixed(2)}%.`}</p><p>This is a directional outlook only. A trade is not confirmed until price and the TradingView structure model agree.</p></article></div>`;
@@ -397,19 +540,19 @@ function renderOutlook(){
 async function loadAll(){
  try{
   const [cotRes,newsRes,providersRes,calendarRes,macroRes,marketsRes]=await Promise.all([fetch("/api/cot"),fetch("/api/news"),fetch("/api/providers"),fetch("/api/calendar"),fetch("/api/macro"),fetch("/api/markets")]);
-  cotData=await cotRes.json();const newsPayload=await newsRes.json();newsData=newsPayload.items||[];providerData=await providersRes.json();calendarData=await calendarRes.json();macroData=await macroRes.json();marketsData=await marketsRes.json();
+  cotData=await cotRes.json();const newsPayload=await newsRes.json();newsData=newsPayload.data?.items||newsPayload.items||[];providerData=await providersRes.json();calendarData=await calendarRes.json();macroData=await macroRes.json();marketsData=await marketsRes.json();
   document.getElementById("status").textContent="Live CFTC + BBC";document.getElementById("status").className="status live";
   document.getElementById("refreshTime").textContent="Last COT refresh: "+(cotData.last_refresh?.time?new Date(cotData.last_refresh.time).toLocaleString("en-GB"):"—");
   populateSelect("overviewMarket",currencyMarkets);populateSelect("cotMarket",currencyMarkets);populateSelect("metalSelect",metalMarkets);populateSelect("outlookMarket",[...currencyMarkets,...metalMarkets]);
   const nm=document.getElementById("newsMarket");nm.innerHTML='<option value="All">All</option>'+[...currencyMarkets,...metalMarkets,"GLOBAL"].map(x=>`<option>${x}</option>`).join("");
-  renderRanking();renderInterpretations();renderCotChart();renderMetals();renderNews();renderCalendar();renderProviders();renderMarkets();renderOutlook();
+  renderRanking();renderInterpretations();renderCotChart();renderMetals();renderNews();renderCalendar();renderProviders();renderMarkets();renderFred();renderOutlook();
  }catch(error){document.getElementById("status").textContent="Load error";document.getElementById("status").className="status error";console.error(error)}
 }
 document.getElementById("overviewMarket").addEventListener("change",renderInterpretations);
 ["cotMarket","chartMode","showCommercial","showNoncommercial"].forEach(id=>document.getElementById(id).addEventListener("change",renderCotChart));
 document.getElementById("metalSelect").addEventListener("change",renderMetals);
 ["newsImpact","newsMarket"].forEach(id=>document.getElementById(id).addEventListener("change",renderNews));
-document.getElementById("reloadNews").addEventListener("click",async()=>{const p=await (await fetch("/api/news")).json();newsData=p.items||[];renderNews()});
+document.getElementById("reloadNews").addEventListener("click",async()=>{const p=await (await fetch("/api/news")).json();newsData=p.data?.items||p.items||[];renderNews()});
 document.getElementById("refresh").addEventListener("click",async()=>{await fetch("/api/cot/refresh",{method:"POST"});location.reload()});
 numberMode.addEventListener("change",()=>{renderRanking();renderInterpretations();renderCotChart();renderMetals();renderOutlook()});
 document.getElementById("addSeasonMarket").addEventListener("click",()=>{seasonality.push({market:"NEW",values:Array(12).fill(0)});renderSeasonality()});
@@ -417,6 +560,7 @@ document.getElementById("saveSeasonality").addEventListener("click",saveSeasonal
 document.getElementById("resetSeasonality").addEventListener("click",()=>{seasonality=defaultSeasonality();renderSeasonality()});
 document.querySelectorAll(".outlook-tab").forEach(b=>b.addEventListener("click",()=>{document.querySelectorAll(".outlook-tab").forEach(x=>x.classList.remove("active"));b.classList.add("active");activeHorizon=b.dataset.horizon;renderOutlook()}));
 document.getElementById("outlookMarket").addEventListener("change",renderOutlook);
+document.getElementById("fredSeriesSelect").addEventListener("change",renderFredChart);
 loadSeasonality();loadAll();
 </script>
 </body>
