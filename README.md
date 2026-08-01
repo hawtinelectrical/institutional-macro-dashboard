@@ -1,26 +1,30 @@
-# Version 7.1 Global Markets Hotfix
+# Version 7.2 — FRED Bonds & Rates
 
-## Fixed
+## Added
 
-- Reduces the free Twelve Data request from 15 symbols to 8.
-- Matches the free plan's 8 API credits per minute.
-- Caches Global Markets data for 15 minutes.
-- Prevents repeated page loads and `/api/intelligence` calls from consuming more credits.
-- Handles HTTP 429 without crashing the dashboard.
-- Uses cached data when available.
-- Shows a clear wait-and-refresh message when no cache exists.
-
-## Security
-
-The API key appeared in a shared Render log. Revoke that key in Twelve Data and create a new one before continuing.
+- Dedicated Bonds & Rates page
+- US 2Y, 5Y, 10Y and 30Y Treasury yields
+- Effective Federal Funds Rate
+- US 10-Year Real Yield
+- US 10-Year Breakeven Inflation
+- Latest values and daily, weekly and monthly changes
+- 120-observation interactive line chart
+- 2s10s and 10s30s curve spreads
+- Curve-state interpretation
+- FRED contribution to USD, gold and silver outlooks
 
 ## Update GitHub
 
 Replace:
 
 - `app/main.py`
+- `app/static/index.html`
 - `README.md`
+
+Keep the existing `app/providers` folder.
 
 Commit with:
 
-`Version 7.1 markets rate-limit hotfix`
+`Version 7.2 FRED bonds and rates`
+
+Your existing `FRED_API_KEY` in Render will be used automatically.
