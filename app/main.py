@@ -295,7 +295,7 @@ async def lifespan(_: FastAPI):
     scheduler.shutdown(wait=False)
 
 
-app = FastAPI(title="Institutional Macro Dashboard Cloud v3", lifespan=lifespan)
+app = FastAPI(title="Institutional Macro Dashboard Cloud v4", lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
