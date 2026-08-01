@@ -48,6 +48,7 @@ footer{text-align:center;color:#7d92aa;padding:18px}
  <div class="brand"><small>INSTITUTIONAL</small><h1>Market Intelligence</h1><p>COT, markets, metals, news and outlooks</p></div>
  <nav>
   <button class="nav active" data-page="overview">Overview</button>
+  <button class="nav" data-page="brief">Daily Brief</button>
   <button class="nav" data-page="cot">COT Relationship</button>
   <button class="nav" data-page="metals">Precious Metals</button>
   <button class="nav" data-page="markets">Global Markets</button>
@@ -58,7 +59,7 @@ footer{text-align:center;color:#7d92aa;padding:18px}
   <button class="nav" data-page="outlooks">Outlooks</button>
   <button class="nav" data-page="providers">Data Connections</button>
  </nav>
- <div class="version">Version 7.3<br>News Intelligence</div>
+ <div class="version">Version 7.4<br>Calendar & Daily Brief</div>
 </aside>
 
 <main class="content">
@@ -92,6 +93,31 @@ footer{text-align:center;color:#7d92aa;padding:18px}
 
   <article class="panel cyan"><div class="heading"><div><h3>Latest high-impact news</h3><p>BBC feed classification by affected market and country.</p></div></div><div id="overviewNews" class="news-list"></div></article>
   <article class="panel gold"><div class="heading"><div><h3>Data coverage</h3><p>Live and pending provider status.</p></div></div><div id="overviewProviders"></div></article>
+ </div>
+</section>
+
+
+<section id="brief" class="page">
+ <div class="hero">
+  <div class="kicker">DAILY MARKET BRIEF</div>
+  <h2>Today’s Institutional Overview</h2>
+  <p>A transparent summary built from COT, FRED, global markets, financial news and the economic calendar.</p>
+ </div>
+ <div class="grid4">
+  <article class="metric"><span>Market regime</span><strong id="briefRegime">—</strong><small>Global equity proxies</small></article>
+  <article class="metric"><span>Strongest relationship</span><strong id="briefStrongest">—</strong><small>COT relationship</small></article>
+  <article class="metric"><span>Preferred pair for review</span><strong id="briefPair">—</strong><small>Not an entry signal</small></article>
+  <article class="metric"><span>Next major event</span><strong id="briefNextEvent">—</strong><small>Calendar risk</small></article>
+ </div>
+ <div class="cols">
+  <article class="panel blue">
+   <div class="heading"><div><h3>Evidence summary</h3><p>Only live or entered evidence is included.</p></div></div>
+   <div id="briefEvidence"></div>
+  </article>
+  <article class="panel gold">
+   <div class="heading"><div><h3>Trade confirmation status</h3><p>Macro context remains separate from entry timing.</p></div></div>
+   <div id="briefConfirmation"></div>
+  </article>
  </div>
 </section>
 
@@ -216,7 +242,20 @@ footer{text-align:center;color:#7d92aa;padding:18px}
 <section id="calendar" class="page">
  <div class="hero"><div class="kicker">ECONOMIC CALENDAR</div><h2>Dated Events, Countries and Market Effects</h2><p>Events show date, impact, country, actual, forecast, previous, source and expected affected markets.</p></div>
  <div id="calendarMessage" class="message"></div>
- <article class="panel red"><div id="calendarList" class="calendar-list"></div></article>
+ <article class="panel blue">
+  <div class="heading"><div><h3>Add calendar event</h3><p>Saved in PostgreSQL and visible across devices.</p></div></div>
+  <div class="controls">
+   <input id="eventDate" type="datetime-local">
+   <input id="eventCountry" placeholder="Country">
+   <input id="eventCurrency" placeholder="Currency, e.g. GBP">
+   <input id="eventName" placeholder="Event name">
+   <select id="eventImpact"><option>High</option><option selected>Medium</option><option>Low</option></select>
+   <input id="eventForecast" placeholder="Forecast">
+   <input id="eventPrevious" placeholder="Previous">
+   <button id="saveCalendarEvent">Save event</button>
+  </div>
+ </article>
+ <article class="panel red"><div class="heading"><div><h3>Upcoming and recent events</h3><p>Date, country, impact and affected markets.</p></div></div><div id="calendarList" class="calendar-list"></div></article>
 </section>
 
 <section id="seasonality" class="page">
@@ -253,7 +292,7 @@ footer{text-align:center;color:#7d92aa;padding:18px}
 </div>
 
 <script>
-let cotData=null, newsData=[], newsMeta={}, providerData={}, calendarData={configured:false,events:[]}, macroData={}, marketsData={};
+let cotData=null, newsData=[], newsMeta={}, providerData={}, calendarData={configured:false,events:[]}, macroData={}, marketsData={}, briefData={};
 let activeHorizon="Daily";
 const months=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 const currencyMarkets=["USD","EUR","GBP","JPY","CHF","CAD","AUD","NZD"];
@@ -426,8 +465,60 @@ function renderNews(){
 }
 function renderCalendar(){
  const message=document.getElementById("calendarMessage"),list=document.getElementById("calendarList");
- if(!calendarData.configured){message.textContent=calendarData.message||"Economic calendar provider is not connected.";list.innerHTML="";return}
- message.textContent="";list.innerHTML=calendarData.events.map(e=>`<article class="event"><div class="event-top"><div><h4>${e.event}</h4><p>${e.date||""} • ${e.country}</p></div><span class="chip ${e.impact.toLowerCase()}">${e.impact}</span></div><p>Actual: ${e.actual??"—"} | Forecast: ${e.forecast??"—"} | Previous: ${e.previous??"—"}</p><div class="chips">${(e.affected||[]).map(x=>`<span class="chip">${x}</span>`).join("")}<span class="chip">Source: ${e.source||"Provider"}</span></div></article>`).join("");
+ message.textContent=calendarData.message||"";
+ const events=calendarData.events||[];
+ list.innerHTML=events.map(e=>{
+  const when=e.date?new Date(e.date).toLocaleString("en-GB"):"";
+  return `<article class="event">
+   <div class="event-top">
+    <div><h4>${e.event}</h4><p>${when} • ${e.country||"Unknown"} • ${e.currency||""}</p></div>
+    <span class="chip ${(e.impact||"Low").toLowerCase()}">${e.impact||"Low"}</span>
+   </div>
+   <p>Actual: ${e.actual??"—"} | Forecast: ${e.forecast??"—"} | Previous: ${e.previous??"—"}</p>
+   <div class="chips">
+    ${(e.effects||[]).map(x=>`<span class="chip">${x}</span>`).join("")}
+    <span class="chip">Source: ${e.source||"Manual"}</span>
+   </div>
+   ${e.is_manual?`<button onclick="deleteCalendarEvent('${e.event_id}')">Delete</button>`:""}
+  </article>`;
+ }).join("")||'<div class="message">No calendar events have been added yet.</div>';
+}
+async function saveCalendarEvent(){
+ const localValue=document.getElementById("eventDate").value;
+ if(!localValue||!document.getElementById("eventName").value.trim()){
+  alert("Enter an event date and event name.");
+  return;
+ }
+ const event={
+  date:new Date(localValue).toISOString(),
+  country:document.getElementById("eventCountry").value||"Unknown",
+  currency:document.getElementById("eventCurrency").value.toUpperCase()||"GLOBAL",
+  event:document.getElementById("eventName").value,
+  impact:document.getElementById("eventImpact").value,
+  forecast:document.getElementById("eventForecast").value||null,
+  previous:document.getElementById("eventPrevious").value||null,
+  source:"Manual",
+ };
+ const response=await fetch("/api/calendar",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({events:[event]})});
+ if(!response.ok){alert("Could not save the event.");return}
+ calendarData=await (await fetch("/api/calendar")).json();
+ renderCalendar();
+ briefData=await (await fetch("/api/brief")).json();
+ renderBrief();
+}
+async function deleteCalendarEvent(eventId){
+ await fetch(`/api/calendar/${encodeURIComponent(eventId)}`,{method:"DELETE"});
+ calendarData=await (await fetch("/api/calendar")).json();
+ renderCalendar();
+}
+function renderBrief(){
+ document.getElementById("briefRegime").textContent=briefData.market_regime||"—";
+ document.getElementById("briefStrongest").textContent=briefData.strongest_relationship?.[0]||"—";
+ document.getElementById("briefPair").textContent=briefData.preferred_pair_for_review||"—";
+ const next=briefData.next_high_impact_event;
+ document.getElementById("briefNextEvent").textContent=next?`${next.currency||next.country||""} ${next.event}`:"—";
+ document.getElementById("briefEvidence").innerHTML=(briefData.evidence||[]).map(x=>`<div class="provider"><span>${x}</span><strong>Evidence</strong></div>`).join("")||'<div class="message">No brief evidence is available.</div>';
+ document.getElementById("briefConfirmation").innerHTML=`<div class="interpretation neutral"><h4>Context only</h4><p>${briefData.trade_confirmation||"Not confirmed."}</p><p>Use the dashboard to choose what to review, then wait for your TradingView HTF/MTF/LTF structure confirmation.</p></div>`;
 }
 function renderProviders(){
  const names={cftc:"CFTC COT",bbc:"BBC Business RSS",fred:"FRED",twelve_data:"Twelve Data Free",trading_economics:"Trading Economics"};
@@ -603,13 +694,13 @@ function renderOutlook(){
 }
 async function loadAll(){
  try{
-  const [cotRes,newsRes,providersRes,calendarRes,macroRes,marketsRes]=await Promise.all([fetch("/api/cot"),fetch("/api/news"),fetch("/api/providers"),fetch("/api/calendar"),fetch("/api/macro"),fetch("/api/markets")]);
-  cotData=await cotRes.json();const newsPayload=await newsRes.json();newsMeta=newsPayload.data||newsPayload;newsData=newsMeta.items||[];providerData=await providersRes.json();calendarData=await calendarRes.json();macroData=await macroRes.json();marketsData=await marketsRes.json();
+  const [cotRes,newsRes,providersRes,calendarRes,macroRes,marketsRes,briefRes]=await Promise.all([fetch("/api/cot"),fetch("/api/news"),fetch("/api/providers"),fetch("/api/calendar"),fetch("/api/macro"),fetch("/api/markets"),fetch("/api/brief")]);
+  cotData=await cotRes.json();const newsPayload=await newsRes.json();newsMeta=newsPayload.data||newsPayload;newsData=newsMeta.items||[];providerData=await providersRes.json();calendarData=await calendarRes.json();macroData=await macroRes.json();marketsData=await marketsRes.json();briefData=await briefRes.json();
   document.getElementById("status").textContent="Live CFTC + BBC";document.getElementById("status").className="status live";
   document.getElementById("refreshTime").textContent="Last COT refresh: "+(cotData.last_refresh?.time?new Date(cotData.last_refresh.time).toLocaleString("en-GB"):"—");
   populateSelect("overviewMarket",currencyMarkets);populateSelect("cotMarket",currencyMarkets);populateSelect("metalSelect",metalMarkets);populateSelect("outlookMarket",[...currencyMarkets,...metalMarkets]);
   const nm=document.getElementById("newsMarket");nm.innerHTML='<option value="All">All</option>'+[...currencyMarkets,...metalMarkets,"GLOBAL"].map(x=>`<option>${x}</option>`).join("");populateNewsFilters();
-  renderRanking();renderInterpretations();renderCotChart();renderMetals();renderNews();renderCalendar();renderProviders();renderMarkets();renderFred();renderOutlook();
+  renderRanking();renderInterpretations();renderCotChart();renderMetals();renderNews();renderCalendar();renderProviders();renderMarkets();renderFred();renderBrief();renderOutlook();
  }catch(error){document.getElementById("status").textContent="Load error";document.getElementById("status").className="status error";console.error(error)}
 }
 document.getElementById("overviewMarket").addEventListener("change",renderInterpretations);
@@ -625,6 +716,7 @@ document.getElementById("resetSeasonality").addEventListener("click",()=>{season
 document.querySelectorAll(".outlook-tab").forEach(b=>b.addEventListener("click",()=>{document.querySelectorAll(".outlook-tab").forEach(x=>x.classList.remove("active"));b.classList.add("active");activeHorizon=b.dataset.horizon;renderOutlook()}));
 document.getElementById("outlookMarket").addEventListener("change",renderOutlook);
 document.getElementById("fredSeriesSelect").addEventListener("change",renderFredChart);
+document.getElementById("saveCalendarEvent").addEventListener("click",saveCalendarEvent);
 loadSeasonality();loadAll();
 </script>
 </body>
