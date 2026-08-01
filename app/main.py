@@ -111,6 +111,14 @@ AUTO_SEASONALITY_GROUPS: dict[str, dict[str, dict[str, Any]]] = {
         "CHINA": {"symbol": "FXI", "invert": False, "label": "China large-cap ETF proxy"},
         "AUSTRALIA_EQ": {"symbol": "EWA", "invert": False, "label": "Australia equity ETF proxy"},
     },
+    "dxy": {
+        "DXY": {
+            "symbols": ["DXY", "DXY:ICE", "UUP"],
+            "invert": False,
+            "label": "US Dollar Index",
+            "fallback_label": "UUP US Dollar Index ETF proxy",
+        },
+    },
 }
 
 
@@ -1689,48 +1697,81 @@ async def refresh_auto_seasonality(group: str) -> dict[str, Any]:
     async with _auto_seasonality_lock:
         async with httpx.AsyncClient(timeout=75, follow_redirects=True) as client:
             for market, definition in definitions.items():
-                symbol = definition["symbol"]
+                candidate_symbols = definition.get("symbols") or [definition["symbol"]]
+                selected_symbol = None
+                selected_payload = None
+                attempt_errors = []
+
                 try:
-                    payload = await _fetch_monthly_history(client, symbol, api_key)
-                    if payload.get("status") == "error":
+                    for symbol in candidate_symbols:
+                        payload = await _fetch_monthly_history(client, symbol, api_key)
+                        if payload.get("status") == "error":
+                            attempt_errors.append(
+                                {
+                                    "symbol": symbol,
+                                    "message": payload.get("message", "Provider error"),
+                                }
+                            )
+                            # A 429 means the provider allowance has been reached;
+                            # do not waste further attempts.
+                            if payload.get("code") == 429:
+                                break
+                            continue
+
+                        values = payload.get("values", [])
+                        if len(values) < 24:
+                            attempt_errors.append(
+                                {
+                                    "symbol": symbol,
+                                    "message": f"Only {len(values)} monthly observations",
+                                }
+                            )
+                            continue
+
+                        selected_symbol = symbol
+                        selected_payload = payload
+                        break
+
+                    if selected_payload is None or selected_symbol is None:
                         results.append(
                             {
                                 "market": market,
-                                "symbol": symbol,
                                 "status": "error",
-                                "message": payload.get("message", "Provider error"),
+                                "attempts": attempt_errors,
+                                "message": "No supported Dollar Index symbol returned sufficient history.",
                             }
                         )
                         continue
 
-                    values = payload.get("values", [])
-                    if len(values) < 24:
-                        results.append(
-                            {
-                                "market": market,
-                                "symbol": symbol,
-                                "status": "insufficient_history",
-                                "observations": len(values),
-                            }
-                        )
-                        continue
-
+                    values = selected_payload.get("values", [])
                     returns_by_month = _monthly_returns_from_values(
                         values,
                         bool(definition.get("invert")),
                     )
+
+                    source_label = definition["label"]
+                    is_fallback = selected_symbol == "UUP"
+                    if is_fallback:
+                        source_label = definition.get(
+                            "fallback_label",
+                            "UUP US Dollar Index ETF proxy",
+                        )
+
                     _upsert_auto_seasonality(
                         market=market,
                         returns_by_month=returns_by_month,
-                        source_label=definition["label"],
-                        symbol=symbol,
+                        source_label=source_label,
+                        symbol=selected_symbol,
                     )
                     results.append(
                         {
                             "market": market,
-                            "symbol": symbol,
+                            "symbol": selected_symbol,
                             "status": "updated",
                             "observations": len(values),
+                            "official_index_symbol": not is_fallback,
+                            "fallback_used": is_fallback,
+                            "attempts": attempt_errors,
                         }
                     )
                 except Exception as exc:  # noqa: BLE001
@@ -1738,9 +1779,9 @@ async def refresh_auto_seasonality(group: str) -> dict[str, Any]:
                     results.append(
                         {
                             "market": market,
-                            "symbol": symbol,
                             "status": "error",
                             "message": str(exc),
+                            "attempts": attempt_errors,
                         }
                     )
 
@@ -1796,6 +1837,7 @@ def auto_seasonality_status() -> dict[str, Any]:
         "schedule": {
             "core": "First day of each month at 03:10 UTC",
             "assets": "First day of each month at 03:20 UTC",
+            "dxy": "First day of each month at 03:30 UTC",
         },
         "methodology": (
             "Monthly close-to-close returns are grouped by calendar month. "
@@ -1840,6 +1882,16 @@ async def lifespan(_: FastAPI):
         id="monthly-auto-seasonality-assets",
         replace_existing=True,
     )
+    scheduler.add_job(
+        refresh_auto_seasonality,
+        "cron",
+        day=1,
+        hour=3,
+        minute=30,
+        args=["dxy"],
+        id="monthly-auto-seasonality-dxy",
+        replace_existing=True,
+    )
     scheduler.start()
     if is_stale():
         asyncio.create_task(refresh_cot())
@@ -1847,7 +1899,7 @@ async def lifespan(_: FastAPI):
     scheduler.shutdown(wait=False)
 
 
-app = FastAPI(title="Institutional Market Intelligence Terminal v8.1 Automatic Seasonality", lifespan=lifespan)
+app = FastAPI(title="Institutional Market Intelligence Terminal v8.2 Dollar Index", lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
