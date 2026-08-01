@@ -1,30 +1,40 @@
-# Version 7.2 — FRED Bonds & Rates
+# Version 7.3 — News Intelligence
+
+## Live news sources
+
+- BBC Business — financially filtered
+- Federal Reserve press releases
+- ECB press releases
+- ECB speeches
+- Bank of England news
+- U.S. Bureau of Labor Statistics latest releases
 
 ## Added
 
-- Dedicated Bonds & Rates page
-- US 2Y, 5Y, 10Y and 30Y Treasury yields
-- Effective Federal Funds Rate
-- US 10-Year Real Yield
-- US 10-Year Breakeven Inflation
-- Latest values and daily, weekly and monthly changes
-- 120-observation interactive line chart
-- 2s10s and 10s30s curve spreads
-- Curve-state interpretation
-- FRED contribution to USD, gold and silver outlooks
+- RSS and Atom feed support
+- Independent source-failure handling
+- Source health dashboard
+- Critical / High / Medium / Low importance
+- Source, category and market filters
+- Countries, affected markets and likely effects
+- “What Changed Today?” summary
+- High-importance headline shortlist
+- Duplicate-title removal
+- Up to 140 financially classified stories
+
+## Reuters
+
+Reuters is not included because a reliable public RSS/API feed with suitable reuse rights is not available for this implementation. It can be added later through a licensed provider.
 
 ## Update GitHub
 
 Replace:
 
+- `app/providers/official_news.py`
 - `app/main.py`
 - `app/static/index.html`
 - `README.md`
 
-Keep the existing `app/providers` folder.
-
 Commit with:
 
-`Version 7.2 FRED bonds and rates`
-
-Your existing `FRED_API_KEY` in Render will be used automatically.
+`Version 7.3 news intelligence`
