@@ -215,6 +215,24 @@ class SeasonalityProfile(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
+class SeasonalityBacktest(Base):
+    __tablename__ = "seasonality_backtests"
+
+    market: Mapped[str] = mapped_column(String(40), primary_key=True)
+    month_number: Mapped[int] = mapped_column(primary_key=True)
+    median_return: Mapped[float] = mapped_column(Float, default=0.0)
+    volatility: Mapped[float] = mapped_column(Float, default=0.0)
+    best_return: Mapped[float] = mapped_column(Float, default=0.0)
+    worst_return: Mapped[float] = mapped_column(Float, default=0.0)
+    max_drawdown: Mapped[float] = mapped_column(Float, default=0.0)
+    positive_years: Mapped[int] = mapped_column(default=0)
+    negative_years: Mapped[int] = mapped_column(default=0)
+    reliability_grade: Mapped[str] = mapped_column(String(10), default="N/A")
+    current_year_return: Mapped[float | None] = mapped_column(Float, nullable=True)
+    divergence: Mapped[float | None] = mapped_column(Float, nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
 class EconomicEvent(Base):
     __tablename__ = "economic_events"
 
@@ -1763,6 +1781,19 @@ async def refresh_auto_seasonality(group: str) -> dict[str, Any]:
                         source_label=source_label,
                         symbol=selected_symbol,
                     )
+                    current_year_by_month = {
+                        month_number: _current_year_month_return(
+                            values,
+                            bool(definition.get("invert")),
+                            month_number,
+                        )
+                        for month_number in range(1, 13)
+                    }
+                    _upsert_backtest_metrics(
+                        market=market,
+                        returns_by_month=returns_by_month,
+                        current_year_by_month=current_year_by_month,
+                    )
                     results.append(
                         {
                             "market": market,
@@ -1847,6 +1878,259 @@ def auto_seasonality_status() -> dict[str, Any]:
     }
 
 
+
+def _median(values: list[float]) -> float:
+    if not values:
+        return 0.0
+    ordered = sorted(values)
+    midpoint = len(ordered) // 2
+    if len(ordered) % 2:
+        return round(ordered[midpoint], 4)
+    return round((ordered[midpoint - 1] + ordered[midpoint]) / 2, 4)
+
+
+def _std_dev(values: list[float]) -> float:
+    if len(values) < 2:
+        return 0.0
+    mean = sum(values) / len(values)
+    variance = sum((value - mean) ** 2 for value in values) / (len(values) - 1)
+    return round(variance ** 0.5, 4)
+
+
+def _max_drawdown_from_monthly_returns(values: list[float]) -> float:
+    if not values:
+        return 0.0
+    equity = 1.0
+    peak = 1.0
+    worst = 0.0
+    for value in values:
+        equity *= 1.0 + value / 100.0
+        peak = max(peak, equity)
+        drawdown = (equity / peak - 1.0) * 100.0
+        worst = min(worst, drawdown)
+    return round(worst, 4)
+
+
+def _reliability_grade(
+    win_rate: float,
+    sample_years: int,
+    volatility: float,
+) -> str:
+    score = 0
+    score += min(40, abs(win_rate - 50) * 1.6)
+    score += min(35, sample_years * 1.75)
+    score += max(0, 25 - min(25, volatility * 4))
+    if score >= 85:
+        return "A+"
+    if score >= 75:
+        return "A"
+    if score >= 65:
+        return "B"
+    if score >= 50:
+        return "C"
+    return "D"
+
+
+def _current_year_month_return(
+    values: list[dict[str, Any]],
+    invert: bool,
+    month_number: int,
+) -> float | None:
+    parsed: list[tuple[date, float]] = []
+    for row in values:
+        raw_date = str(row.get("datetime", ""))[:10]
+        raw_close = row.get("close")
+        if not raw_date or raw_close in (None, ""):
+            continue
+        try:
+            dt = date.fromisoformat(raw_date)
+            close = float(raw_close)
+            if close <= 0:
+                continue
+            adjusted = 1.0 / close if invert else close
+            parsed.append((dt, adjusted))
+        except (TypeError, ValueError):
+            continue
+
+    parsed.sort(key=lambda item: item[0])
+    current_year = datetime.now(timezone.utc).year
+    for index in range(1, len(parsed)):
+        current_date, current_close = parsed[index]
+        _, previous_close = parsed[index - 1]
+        if (
+            current_date.year == current_year
+            and current_date.month == month_number
+            and previous_close != 0
+        ):
+            return round((current_close / previous_close - 1.0) * 100.0, 4)
+    return None
+
+
+def _upsert_backtest_metrics(
+    market: str,
+    returns_by_month: dict[int, list[tuple[int, float]]],
+    current_year_by_month: dict[int, float | None],
+) -> None:
+    now = datetime.now(timezone.utc)
+    with Session(engine) as session:
+        for month_number in range(1, 13):
+            observations = returns_by_month.get(month_number, [])
+            values = [value for _, value in observations]
+            win_rate = (
+                sum(1 for value in values if value > 0) / len(values) * 100.0
+                if values
+                else 50.0
+            )
+            volatility = _std_dev(values)
+            sample_years = len(values)
+            median_return = _median(values)
+            current_year_return = current_year_by_month.get(month_number)
+            divergence = (
+                round(current_year_return - median_return, 4)
+                if current_year_return is not None
+                else None
+            )
+
+            record = session.get(
+                SeasonalityBacktest,
+                {"market": market, "month_number": month_number},
+            )
+            if record is None:
+                record = SeasonalityBacktest(
+                    market=market,
+                    month_number=month_number,
+                    median_return=0.0,
+                    volatility=0.0,
+                    best_return=0.0,
+                    worst_return=0.0,
+                    max_drawdown=0.0,
+                    positive_years=0,
+                    negative_years=0,
+                    reliability_grade="N/A",
+                    current_year_return=None,
+                    divergence=None,
+                    updated_at=now,
+                )
+                session.add(record)
+
+            record.median_return = median_return
+            record.volatility = volatility
+            record.best_return = round(max(values), 4) if values else 0.0
+            record.worst_return = round(min(values), 4) if values else 0.0
+            record.max_drawdown = _max_drawdown_from_monthly_returns(values)
+            record.positive_years = sum(1 for value in values if value > 0)
+            record.negative_years = sum(1 for value in values if value <= 0)
+            record.reliability_grade = _reliability_grade(
+                win_rate=win_rate,
+                sample_years=sample_years,
+                volatility=volatility,
+            )
+            record.current_year_return = current_year_return
+            record.divergence = divergence
+            record.updated_at = now
+
+        session.commit()
+
+
+def read_backtest_metrics() -> dict[str, list[dict[str, Any]]]:
+    output: dict[str, list[dict[str, Any]]] = {}
+    with Session(engine) as session:
+        rows = session.scalars(
+            select(SeasonalityBacktest).order_by(
+                SeasonalityBacktest.market.asc(),
+                SeasonalityBacktest.month_number.asc(),
+            )
+        ).all()
+
+    for row in rows:
+        output.setdefault(row.market, [])
+        output[row.market].append(
+            {
+                "month_number": row.month_number,
+                "median_return": row.median_return,
+                "volatility": row.volatility,
+                "best_return": row.best_return,
+                "worst_return": row.worst_return,
+                "max_drawdown": row.max_drawdown,
+                "positive_years": row.positive_years,
+                "negative_years": row.negative_years,
+                "reliability_grade": row.reliability_grade,
+                "current_year_return": row.current_year_return,
+                "divergence": row.divergence,
+            }
+        )
+    return output
+
+
+def strongest_seasonal_windows(
+    market: str,
+    metric: str = "average_10y",
+) -> list[dict[str, Any]]:
+    profiles = read_seasonality_profiles()
+    months = profiles.get(market.upper(), [])
+    if len(months) != 12:
+        return []
+
+    windows = []
+    for start_index in range(12):
+        for length in (2, 3):
+            values = [
+                float(months[(start_index + offset) % 12].get(metric) or 0)
+                for offset in range(length)
+            ]
+            average_return = sum(values) / length
+            windows.append(
+                {
+                    "start_month": start_index + 1,
+                    "end_month": ((start_index + length - 1) % 12) + 1,
+                    "length_months": length,
+                    "average_return": round(average_return, 4),
+                }
+            )
+
+    windows.sort(key=lambda row: row["average_return"], reverse=True)
+    return windows[:6]
+
+
+def direct_pair_seasonality(
+    base: str,
+    quote: str,
+    metric: str = "average_10y",
+) -> dict[str, Any]:
+    profiles = read_seasonality_profiles()
+    pair_key = f"{base.upper()}{quote.upper()}"
+    direct = profiles.get(pair_key)
+    source = "direct"
+
+    if direct is None:
+        base_rows = profiles.get(base.upper())
+        quote_rows = profiles.get(quote.upper())
+        if not base_rows or not quote_rows:
+            return {
+                "available": False,
+                "pair": f"{base.upper()}/{quote.upper()}",
+            }
+        direct = []
+        for month_number in range(1, 13):
+            base_value = float(base_rows[month_number - 1].get(metric) or 0)
+            quote_value = float(quote_rows[month_number - 1].get(metric) or 0)
+            direct.append(
+                {
+                    "month_number": month_number,
+                    metric: round(base_value - quote_value, 4),
+                }
+            )
+        source = "derived_from_currency_profiles"
+
+    return {
+        "available": True,
+        "pair": f"{base.upper()}/{quote.upper()}",
+        "source": source,
+        "metric": metric,
+        "months": direct,
+    }
+
+
 scheduler = AsyncIOScheduler(timezone="UTC")
 
 
@@ -1899,7 +2183,7 @@ async def lifespan(_: FastAPI):
     scheduler.shutdown(wait=False)
 
 
-app = FastAPI(title="Institutional Market Intelligence Terminal v8.3 Current Month Highlight", lifespan=lifespan)
+app = FastAPI(title="Institutional Market Intelligence Terminal v8.4 Seasonality Backtesting", lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
@@ -2019,6 +2303,40 @@ async def run_auto_seasonality_refresh(group: str) -> dict[str, Any]:
     if result.get("status") == "error":
         raise HTTPException(status_code=400, detail=result.get("message"))
     return result
+
+
+@app.get("/api/seasonality/backtest")
+async def get_seasonality_backtest() -> dict[str, Any]:
+    return {
+        "markets": read_backtest_metrics(),
+        "methodology": (
+            "Backtesting uses monthly close-to-close historical returns. "
+            "Median, sample volatility, best/worst outcomes, win counts, "
+            "drawdown proxy, current-year comparison and reliability grade "
+            "are calculated separately from the average seasonal profile."
+        ),
+    }
+
+
+@app.get("/api/seasonality/windows/{market}")
+async def get_seasonal_windows(
+    market: str,
+    metric: str = "average_10y",
+) -> dict[str, Any]:
+    return {
+        "market": market.upper(),
+        "metric": metric,
+        "windows": strongest_seasonal_windows(market, metric),
+    }
+
+
+@app.get("/api/seasonality/pair/{base}/{quote}")
+async def get_pair_seasonality(
+    base: str,
+    quote: str,
+    metric: str = "average_10y",
+) -> dict[str, Any]:
+    return direct_pair_seasonality(base, quote, metric)
 
 
 @app.get("/api/markets")
