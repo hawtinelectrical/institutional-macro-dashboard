@@ -1,33 +1,35 @@
-# Institutional Macro Dashboard — Cloud v4
+# Institutional Macro Dashboard — Cloud v5
 
-Version 4 adds:
+Version 5 expands the live terminal while preserving the working CFTC backend.
 
-- dashboard navigation
-- institutional COT-flow currency ranking
-- strongest-versus-weakest pair opportunities
-- pair comparison matrix
-- selected-currency 10-week trend chart
-- money-flow summary cards
-- original detailed 10-week COT table
-- Bonds & Rates placeholder page for the next live module
+## Live now
+
+- CFTC Legacy Futures-Only feed
+- Commercial and Non-commercial positions
+- 8 major currencies
+- 10-week tables and weekly changes
+- COT-flow currency rankings
+- strongest-versus-weakest pair shortlist
+- pair matrix
+- COT trend chart
+- transparent partial confluence scoring
+
+## Prepared but not yet connected
+
+- sovereign bond yields
+- policy rates and central-bank bias
+- DXY / risk context
+- economic calendar and news
+- TradingView HTF / MTF / LTF alignment
+
+Pending components are labelled clearly and are not assigned invented values.
 
 ## Update the live site
 
-Replace these files in GitHub:
+Replace:
 
 - `app/main.py`
 - `app/static/index.html`
 - `README.md`
 
-Commit the changes. Render auto-deploys the update.
-
-## Strength model
-
-The v4 ranking follows the selected interpretation:
-
-- rising Commercial net positioning adds bullish flow
-- rising Non-commercial net positioning is treated inversely
-- raw flow = 10-week Commercial change minus 10-week Non-commercial change
-- raw flow is scaled from 0 to 100 across the eight currencies
-
-This is a transparent context model, not a guaranteed price forecast.
+Commit to GitHub. Render auto-deploys.
