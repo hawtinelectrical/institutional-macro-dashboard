@@ -166,6 +166,20 @@ class SeasonalityValue(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
+class SeasonalityProfile(Base):
+    __tablename__ = "seasonality_profiles"
+
+    market: Mapped[str] = mapped_column(String(40), primary_key=True)
+    month_number: Mapped[int] = mapped_column(primary_key=True)
+    average_5y: Mapped[float] = mapped_column(Float, default=0.0)
+    average_10y: Mapped[float] = mapped_column(Float, default=0.0)
+    average_20y: Mapped[float] = mapped_column(Float, default=0.0)
+    win_rate: Mapped[float] = mapped_column(Float, default=50.0)
+    sample_years: Mapped[int] = mapped_column(default=0)
+    notes: Mapped[str] = mapped_column(Text, default="")
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
 class EconomicEvent(Base):
     __tablename__ = "economic_events"
 
@@ -1311,6 +1325,182 @@ def delete_technical_setup(pair: str) -> dict[str, Any]:
     return {"deleted": True}
 
 
+
+def default_profile_values() -> dict[str, Any]:
+    return {
+        "average_5y": 0.0,
+        "average_10y": 0.0,
+        "average_20y": 0.0,
+        "win_rate": 50.0,
+        "sample_years": 0,
+        "notes": "",
+    }
+
+
+def read_seasonality_profiles() -> dict[str, list[dict[str, Any]]]:
+    profiles: dict[str, list[dict[str, Any]]] = {}
+
+    with Session(engine) as session:
+        rows = session.scalars(
+            select(SeasonalityProfile).order_by(
+                SeasonalityProfile.market.asc(),
+                SeasonalityProfile.month_number.asc(),
+            )
+        ).all()
+
+        legacy_rows = session.scalars(
+            select(SeasonalityValue).order_by(
+                SeasonalityValue.market.asc(),
+                SeasonalityValue.month_number.asc(),
+            )
+        ).all()
+
+    for row in rows:
+        profiles.setdefault(
+            row.market,
+            [
+                {"month_number": month, **default_profile_values()}
+                for month in range(1, 13)
+            ],
+        )
+        profiles[row.market][row.month_number - 1] = {
+            "month_number": row.month_number,
+            "average_5y": row.average_5y,
+            "average_10y": row.average_10y,
+            "average_20y": row.average_20y,
+            "win_rate": row.win_rate,
+            "sample_years": row.sample_years,
+            "notes": row.notes,
+        }
+
+    for row in legacy_rows:
+        profiles.setdefault(
+            row.market,
+            [
+                {"month_number": month, **default_profile_values()}
+                for month in range(1, 13)
+            ],
+        )
+        current = profiles[row.market][row.month_number - 1]
+        if (
+            current["average_5y"] == 0
+            and current["average_10y"] == 0
+            and current["average_20y"] == 0
+        ):
+            current["average_10y"] = row.tendency
+
+    return profiles
+
+
+def save_seasonality_profiles(payload: dict[str, Any]) -> dict[str, Any]:
+    markets = payload.get("markets", [])
+    now = datetime.now(timezone.utc)
+    saved = 0
+
+    with Session(engine) as session:
+        for market_row in markets:
+            market = str(market_row.get("market", "")).upper().strip()
+            months = market_row.get("months", [])
+            if not market:
+                continue
+
+            for index, month_row in enumerate(months[:12], start=1):
+                month_number = int(month_row.get("month_number") or index)
+                if not 1 <= month_number <= 12:
+                    continue
+
+                profile = session.get(
+                    SeasonalityProfile,
+                    {"market": market, "month_number": month_number},
+                )
+                if profile is None:
+                    profile = SeasonalityProfile(
+                        market=market,
+                        month_number=month_number,
+                        average_5y=0.0,
+                        average_10y=0.0,
+                        average_20y=0.0,
+                        win_rate=50.0,
+                        sample_years=0,
+                        notes="",
+                        updated_at=now,
+                    )
+                    session.add(profile)
+
+                profile.average_5y = float(month_row.get("average_5y") or 0)
+                profile.average_10y = float(month_row.get("average_10y") or 0)
+                profile.average_20y = float(month_row.get("average_20y") or 0)
+                profile.win_rate = max(
+                    0.0,
+                    min(100.0, float(month_row.get("win_rate") or 0)),
+                )
+                profile.sample_years = max(
+                    0,
+                    int(float(month_row.get("sample_years") or 0)),
+                )
+                profile.notes = str(month_row.get("notes") or "")
+                profile.updated_at = now
+                saved += 1
+
+        session.commit()
+
+    return {"saved": saved, "markets": len(markets)}
+
+
+def seasonality_horizon_summary(
+    market: str,
+    metric: str = "average_10y",
+) -> dict[str, Any]:
+    profiles = read_seasonality_profiles()
+    months = profiles.get(market.upper(), [])
+    if not months:
+        return {
+            "market": market.upper(),
+            "available": False,
+            "metric": metric,
+        }
+
+    current_month = datetime.now(timezone.utc).month
+    current = months[current_month - 1]
+    current_value = float(current.get(metric) or 0)
+    next_six = [
+        float(months[(current_month - 1 + offset) % 12].get(metric) or 0)
+        for offset in range(6)
+    ]
+    full_year = [float(row.get(metric) or 0) for row in months]
+
+    win_rate = float(current.get("win_rate") or 0)
+    sample_years = int(current.get("sample_years") or 0)
+    reliability = round(
+        max(
+            0,
+            min(
+                100,
+                (abs(win_rate - 50) * 1.5)
+                + min(30, sample_years * 1.5),
+            ),
+        )
+    )
+
+    return {
+        "market": market.upper(),
+        "available": True,
+        "metric": metric,
+        "current_month": current_month,
+        "current_value": round(current_value, 3),
+        "six_month_value": round(sum(next_six) / 6, 3),
+        "yearly_value": round(sum(full_year) / 12, 3),
+        "win_rate": round(win_rate, 1),
+        "sample_years": sample_years,
+        "reliability": reliability,
+        "months": months,
+        "methodology": (
+            "Daily and weekly views use the current monthly seasonal backdrop. "
+            "Six-month and yearly views average the corresponding monthly profile."
+        ),
+    }
+
+
 scheduler = AsyncIOScheduler(timezone="UTC")
 
 
@@ -1333,7 +1523,7 @@ async def lifespan(_: FastAPI):
     scheduler.shutdown(wait=False)
 
 
-app = FastAPI(title="Institutional Market Intelligence Terminal v7.6 TradingView Setup Centre", lifespan=lifespan)
+app = FastAPI(title="Institutional Market Intelligence Terminal v8 Seasonality and Alignment", lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
@@ -1412,6 +1602,34 @@ async def get_seasonality() -> dict[str, Any]:
 @app.post("/api/seasonality")
 async def post_seasonality(payload: dict[str, Any]) -> dict[str, Any]:
     return save_seasonality(payload)
+
+
+@app.get("/api/seasonality/v2")
+async def get_seasonality_v2() -> dict[str, Any]:
+    return {
+        "markets": read_seasonality_profiles(),
+        "methodology": (
+            "Profiles store monthly 5-year, 10-year and 20-year average returns, "
+            "win rates and sample sizes. Short-horizon views use the current "
+            "monthly backdrop rather than pretending daily history is available."
+        ),
+    }
+
+
+@app.post("/api/seasonality/v2")
+async def post_seasonality_v2(payload: dict[str, Any]) -> dict[str, Any]:
+    return save_seasonality_profiles(payload)
+
+
+@app.get("/api/seasonality/v2/{market}")
+async def get_market_seasonality(
+    market: str,
+    metric: str = "average_10y",
+) -> dict[str, Any]:
+    allowed = {"average_5y", "average_10y", "average_20y"}
+    if metric not in allowed:
+        raise HTTPException(status_code=400, detail="Unsupported seasonality metric.")
+    return seasonality_horizon_summary(market, metric)
 
 
 @app.get("/api/markets")
