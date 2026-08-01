@@ -1,46 +1,69 @@
-# Version 8 — Seasonality and Institutional Alignment
+# Version 8.1 — Automatic Online Seasonality
 
-## Seasonality Engine
+## What this adds
 
-- Monthly heatmaps
-- 5-year average return
-- 10-year average return
-- 20-year average return
-- Win rate
-- Sample years
-- Reliability score
-- Cloud-stored profiles
-- Cell editor
-- Seasonal curves
-- Current-month leaders
-- Six-month and yearly averages
-- Seasonality incorporated into currency and pair scoring
+The dashboard now calculates seasonality from historical monthly prices rather
+than requiring every heatmap cell to be entered manually.
 
-Daily and weekly displays use the current monthly seasonal backdrop. They are
-not presented as separate historical daily or weekly studies unless that data
-is later supplied.
+For each configured market it calculates:
 
-## Institutional Alignment Engine
+- 5-year average monthly return
+- 10-year average monthly return
+- 20-year average monthly return
+- Monthly win rate
+- Available sample years
+- Automatic source note and refresh date
 
-Combines:
+The results are stored in PostgreSQL and immediately feed:
 
-- Commercial / Non-commercial COT relationship
-- Seasonality and reliability
-- Financial news
-- Economic calendar
-- FRED rates evidence
-- Global risk regime
-- Saved TradingView technical setup
+- seasonal heatmaps
+- seasonal curves
+- currency intelligence
+- pair rankings
+- Institutional Alignment
 
-Outputs:
+## Free-plan protection
 
-- Currency alignment ranking
-- Pair alignment ranking
-- Macro score
-- Technical score
-- Combined alignment
-- Conflicting evidence
-- Macro Only / Watch / Trade Ready / Invalidated status
+Twelve Data's free allowance is protected by two groups of eight symbols:
+
+### Core currencies
+
+- USD proxy
+- EUR
+- GBP
+- JPY
+- CHF
+- CAD
+- AUD
+- NZD
+
+### Assets
+
+- Gold
+- Silver
+- S&P 500 proxy
+- FTSE 100 / UK equities proxy
+- Nasdaq 100 proxy
+- Japan equity proxy
+- China equity proxy
+- Australia equity proxy
+
+The scheduler runs:
+
+- Core: first day of each month at 03:10 UTC
+- Assets: first day of each month at 03:20 UTC
+
+The page also provides separate manual refresh buttons. Do not run both groups
+within the same minute on the free plan.
+
+## Methodology
+
+Monthly close-to-close returns are grouped by calendar month. Inverted forex
+quotes such as USD/JPY are converted to the currency's own perspective before
+returns are calculated.
+
+ETF-based regional data is clearly labelled as a proxy and is not presented as
+an official cash-index value.
 
 ## Update GitHub
 
@@ -54,4 +77,4 @@ Keep the existing `app/providers/` folder.
 
 Commit with:
 
-`Version 8 seasonality and alignment`
+`Version 8.1 automatic seasonality`
