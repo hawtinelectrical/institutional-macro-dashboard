@@ -2233,6 +2233,206 @@ async def cot_price_overlay(market: str) -> dict[str, Any]:
     return {"configured": True, "candles": [], "attempts": attempts, "message": "No supported price series was returned."}
 
 
+
+_trading212_cache: dict[str, Any] = {}
+_trading212_cache_time: datetime | None = None
+_trading212_lock = asyncio.Lock()
+TRADING212_CACHE_TTL = timedelta(minutes=2)
+
+
+def trading212_configuration() -> dict[str, Any]:
+    environment = os.getenv("TRADING212_ENVIRONMENT", "live").strip().lower()
+    if environment not in {"live", "demo"}:
+        environment = "live"
+    return {
+        "api_key": os.getenv("TRADING212_API_KEY"),
+        "api_secret": os.getenv("TRADING212_API_SECRET"),
+        "environment": environment,
+        "base_url": (
+            "https://demo.trading212.com/api/v0"
+            if environment == "demo"
+            else "https://live.trading212.com/api/v0"
+        ),
+    }
+
+
+async def _t212_get(
+    client: httpx.AsyncClient,
+    path: str,
+    config: dict[str, Any],
+) -> Any:
+    response = await client.get(
+        f"{config['base_url']}{path}",
+        auth=(config["api_key"], config["api_secret"]),
+        headers={"Accept": "application/json"},
+    )
+    if response.status_code == 429:
+        raise HTTPException(status_code=429, detail="Trading 212 rate limit reached. Wait briefly and try again.")
+    if response.status_code in {401, 403}:
+        raise HTTPException(
+            status_code=response.status_code,
+            detail="Trading 212 rejected the credentials or read permissions.",
+        )
+    response.raise_for_status()
+    return response.json()
+
+
+async def _t212_dividends(
+    client: httpx.AsyncClient,
+    config: dict[str, Any],
+) -> list[dict[str, Any]]:
+    response = await client.get(
+        f"{config['base_url']}/equity/history/dividends",
+        params={"limit": 50},
+        auth=(config["api_key"], config["api_secret"]),
+        headers={"Accept": "application/json"},
+    )
+    if response.status_code in {401, 403, 429}:
+        return []
+    response.raise_for_status()
+    return response.json().get("items", [])
+
+
+def _t212_position(row: dict[str, Any]) -> dict[str, Any]:
+    instrument = row.get("instrument") or {}
+    wallet = row.get("walletImpact") or {}
+    quantity = float(row.get("quantity") or 0)
+    average_price = float(row.get("averagePricePaid") or 0)
+    current_price = float(row.get("currentPrice") or 0)
+
+    current_value = wallet.get("currentValue")
+    if current_value is None:
+        current_value = wallet.get("totalValue")
+    if current_value is None:
+        current_value = quantity * current_price
+
+    invested = wallet.get("investedValue")
+    if invested is None:
+        invested = wallet.get("totalCost")
+    if invested is None:
+        invested = quantity * average_price
+
+    profit = wallet.get("unrealizedProfitLoss")
+    if profit is None:
+        profit = wallet.get("result")
+    if profit is None:
+        profit = float(current_value or 0) - float(invested or 0)
+
+    current_value = float(current_value or 0)
+    invested = float(invested or 0)
+    profit = float(profit or 0)
+
+    return {
+        "ticker": instrument.get("ticker") or row.get("ticker") or "Unknown",
+        "name": instrument.get("name") or instrument.get("shortName") or instrument.get("ticker") or "Unknown instrument",
+        "currency": instrument.get("currencyCode") or instrument.get("currency"),
+        "quantity": quantity,
+        "average_price": average_price,
+        "current_price": current_price,
+        "current_value": round(current_value, 2),
+        "invested_value": round(invested, 2),
+        "profit_loss": round(profit, 2),
+        "profit_loss_pct": round(profit / invested * 100 if invested else 0, 2),
+    }
+
+
+async def trading212_portfolio(force: bool = False) -> dict[str, Any]:
+    global _trading212_cache, _trading212_cache_time
+
+    config = trading212_configuration()
+    if not config["api_key"] or not config["api_secret"]:
+        return {
+            "configured": False,
+            "connected": False,
+            "environment": config["environment"],
+            "message": "Add TRADING212_API_KEY and TRADING212_API_SECRET in Render.",
+            "summary": {},
+            "positions": [],
+            "allocation": [],
+            "dividends": [],
+        }
+
+    now = datetime.now(timezone.utc)
+    if (
+        not force
+        and _trading212_cache
+        and _trading212_cache_time
+        and now - _trading212_cache_time < TRADING212_CACHE_TTL
+    ):
+        return _trading212_cache
+
+    async with _trading212_lock:
+        async with httpx.AsyncClient(timeout=45, follow_redirects=True) as client:
+            summary_raw, positions_raw = await asyncio.gather(
+                _t212_get(client, "/equity/account/summary", config),
+                _t212_get(client, "/equity/positions", config),
+            )
+            dividends = await _t212_dividends(client, config)
+
+        positions = [_t212_position(row) for row in positions_raw]
+        positions.sort(key=lambda row: row["current_value"], reverse=True)
+
+        positions_value = sum(row["current_value"] for row in positions)
+        invested = sum(row["invested_value"] for row in positions)
+        profit = sum(row["profit_loss"] for row in positions)
+        cash = float(
+            summary_raw.get("cash")
+            or summary_raw.get("freeFunds")
+            or summary_raw.get("availableCash")
+            or 0
+        )
+        total_value = float(
+            summary_raw.get("totalValue")
+            or summary_raw.get("accountValue")
+            or summary_raw.get("portfolioValue")
+            or cash + positions_value
+        )
+        currency = (
+            summary_raw.get("currency")
+            or summary_raw.get("currencyCode")
+            or summary_raw.get("primaryCurrency")
+            or "GBP"
+        )
+
+        allocation = [
+            {
+                "ticker": row["ticker"],
+                "name": row["name"],
+                "value": row["current_value"],
+                "weight_pct": round(row["current_value"] / positions_value * 100, 2)
+                if positions_value else 0,
+            }
+            for row in positions
+        ]
+
+        result = {
+            "configured": True,
+            "connected": True,
+            "read_only": True,
+            "environment": config["environment"],
+            "refreshed_at": datetime.now(timezone.utc).isoformat(),
+            "summary": {
+                "currency": currency,
+                "cash": round(cash, 2),
+                "positions_value": round(positions_value, 2),
+                "total_value": round(total_value, 2),
+                "invested_value": round(invested, 2),
+                "unrealised_profit_loss": round(profit, 2),
+                "unrealised_profit_loss_pct": round(profit / invested * 100 if invested else 0, 2),
+                "position_count": len(positions),
+            },
+            "positions": positions,
+            "allocation": allocation,
+            "winners": sorted(positions, key=lambda row: row["profit_loss_pct"], reverse=True)[:5],
+            "losers": sorted(positions, key=lambda row: row["profit_loss_pct"])[:5],
+            "dividends": dividends[:20],
+            "message": "Connected using the official Trading 212 read-only API.",
+        }
+        _trading212_cache = result
+        _trading212_cache_time = datetime.now(timezone.utc)
+        return result
+
+
 scheduler = AsyncIOScheduler(timezone="UTC")
 
 
@@ -2285,7 +2485,7 @@ async def lifespan(_: FastAPI):
     scheduler.shutdown(wait=False)
 
 
-app = FastAPI(title="Institutional Market Intelligence Terminal v8.5 COT Candle Overlay", lifespan=lifespan)
+app = FastAPI(title="Institutional Market Intelligence Terminal v8.6 My Portfolio", lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
@@ -2504,6 +2704,11 @@ async def remove_technical_setup(pair: str) -> dict[str, Any]:
         return delete_technical_setup(pair)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/api/portfolio/trading212")
+async def get_trading212_portfolio(force: bool = False) -> dict[str, Any]:
+    return await trading212_portfolio(force=force)
 
 
 @app.get("/api/providers")
