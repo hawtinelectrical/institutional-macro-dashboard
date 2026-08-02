@@ -1,35 +1,30 @@
-# Version 8.6 — My Portfolio
+# Version 9.1 — Trading 212 Stability and 104-Week COT
 
-Adds a read-only Trading 212 portfolio page using the official Public API.
+## Trading 212 fixes
 
-## Features
+- Prevents `Unexpected token 'I' ... is not valid JSON`
+- Every portfolio error now returns structured JSON
+- Shows exact diagnostics for:
+  - incorrect key or secret
+  - live/demo mismatch
+  - missing read permissions
+  - rate limits
+  - timeout
+  - network errors
+  - invalid API responses
+- Dividend-history errors no longer break holdings and account data
+- Adds a visible connection-diagnostics panel
+- No credentials are displayed or sent to the browser
 
-- Total account value
-- Cash balance
-- Position value
-- Unrealised profit/loss
-- Holdings and allocation
-- Winners and losers
-- Recent dividends
-- Manual refresh
-- Two-minute server cache
+## COT chart
 
-## Render variables
+- Displays the most recent 104 weeks
+- Commercial and Non-commercial lines use the same 104-week range
+- Background DXY/futures candles use that same two-year range
+- 104 weeks is the default fixed view
+- Candle opacity and visibility controls remain available
 
-```text
-TRADING212_API_KEY=<read-only key>
-TRADING212_API_SECRET=<secret>
-TRADING212_ENVIRONMENT=live
-```
-
-Use `demo` for paper trading.
-
-## Security
-
-The build calls only account summary, positions and dividend-history endpoints.
-There are no order-placement, amendment or cancellation routes.
-
-Replace:
+## Replace in GitHub
 
 - `app/main.py`
 - `app/static/index.html`
@@ -37,4 +32,6 @@ Replace:
 
 Keep `app/providers/`.
 
-Commit: `Version 8.6 My Portfolio`
+Commit:
+
+`Version 9.1 Trading 212 stability and 104 week COT`
