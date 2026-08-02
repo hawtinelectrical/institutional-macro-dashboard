@@ -18,7 +18,7 @@ from app.providers.official_news import get_official_news
 import httpx
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from fastapi import BackgroundTasks, FastAPI, HTTPException
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import (
     BigInteger,
@@ -2261,36 +2261,85 @@ async def _t212_get(
     path: str,
     config: dict[str, Any],
 ) -> Any:
-    response = await client.get(
-        f"{config['base_url']}{path}",
-        auth=(config["api_key"], config["api_secret"]),
-        headers={"Accept": "application/json"},
-    )
-    if response.status_code == 429:
-        raise HTTPException(status_code=429, detail="Trading 212 rate limit reached. Wait briefly and try again.")
-    if response.status_code in {401, 403}:
+    try:
+        response = await client.get(
+            f"{config['base_url']}{path}",
+            auth=(config["api_key"], config["api_secret"]),
+            headers={"Accept": "application/json"},
+        )
+    except httpx.TimeoutException as exc:
+        raise HTTPException(
+            status_code=504,
+            detail={"code": "trading212_timeout", "message": "Trading 212 timed out."},
+        ) from exc
+    except httpx.RequestError as exc:
+        raise HTTPException(
+            status_code=502,
+            detail={"code": "trading212_network_error", "message": "The dashboard could not reach Trading 212."},
+        ) from exc
+
+    errors = {
+        401: {
+            "code": "trading212_unauthorised",
+            "message": "Trading 212 rejected the API key or secret. Check the matching key pair and live/demo environment.",
+        },
+        403: {
+            "code": "trading212_permission_denied",
+            "message": "The API key does not have permission to read this account or its positions.",
+        },
+        429: {
+            "code": "trading212_rate_limited",
+            "message": "Trading 212 rate limit reached. Wait briefly and try again.",
+        },
+    }
+    if response.status_code in errors:
+        raise HTTPException(status_code=response.status_code, detail=errors[response.status_code])
+    if response.status_code >= 500:
+        raise HTTPException(
+            status_code=502,
+            detail={"code": "trading212_upstream_error", "message": "Trading 212 returned a server error."},
+        )
+    if not response.is_success:
         raise HTTPException(
             status_code=response.status_code,
-            detail="Trading 212 rejected the credentials or read permissions.",
+            detail={
+                "code": "trading212_request_failed",
+                "message": f"Trading 212 returned HTTP {response.status_code}.",
+            },
         )
-    response.raise_for_status()
-    return response.json()
+    try:
+        return response.json()
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=502,
+            detail={"code": "trading212_invalid_response", "message": "Trading 212 returned invalid JSON."},
+        ) from exc
 
 
 async def _t212_dividends(
     client: httpx.AsyncClient,
     config: dict[str, Any],
-) -> list[dict[str, Any]]:
-    response = await client.get(
-        f"{config['base_url']}/equity/history/dividends",
-        params={"limit": 50},
-        auth=(config["api_key"], config["api_secret"]),
-        headers={"Accept": "application/json"},
-    )
-    if response.status_code in {401, 403, 429}:
-        return []
-    response.raise_for_status()
-    return response.json().get("items", [])
+) -> tuple[list[dict[str, Any]], dict[str, Any] | None]:
+    try:
+        response = await client.get(
+            f"{config['base_url']}/equity/history/dividends",
+            params={"limit": 50},
+            auth=(config["api_key"], config["api_secret"]),
+            headers={"Accept": "application/json"},
+        )
+    except httpx.RequestError:
+        return [], {"code": "dividend_history_unavailable", "message": "Dividend history could not be reached."}
+
+    if response.status_code in {401, 403}:
+        return [], {"code": "dividend_permission_missing", "message": "Dividend history permission is not enabled."}
+    if response.status_code == 429:
+        return [], {"code": "dividend_rate_limited", "message": "Dividend history is temporarily rate limited."}
+    if not response.is_success:
+        return [], {"code": "dividend_history_error", "message": f"Dividend history returned HTTP {response.status_code}."}
+    try:
+        return response.json().get("items", []), None
+    except ValueError:
+        return [], {"code": "dividend_invalid_response", "message": "Dividend history returned invalid JSON."}
 
 
 def _t212_position(row: dict[str, Any]) -> dict[str, Any]:
@@ -2367,7 +2416,7 @@ async def trading212_portfolio(force: bool = False) -> dict[str, Any]:
                 _t212_get(client, "/equity/account/summary", config),
                 _t212_get(client, "/equity/positions", config),
             )
-            dividends = await _t212_dividends(client, config)
+            dividends, dividend_warning = await _t212_dividends(client, config)
 
         positions = [_t212_position(row) for row in positions_raw]
         positions.sort(key=lambda row: row["current_value"], reverse=True)
@@ -2426,11 +2475,243 @@ async def trading212_portfolio(force: bool = False) -> dict[str, Any]:
             "winners": sorted(positions, key=lambda row: row["profit_loss_pct"], reverse=True)[:5],
             "losers": sorted(positions, key=lambda row: row["profit_loss_pct"])[:5],
             "dividends": dividends[:20],
+            "diagnostics": {
+                "environment": config["environment"],
+                "account_summary": "ok",
+                "positions": "ok",
+                "dividends": "warning" if dividend_warning else "ok",
+                "warnings": [dividend_warning] if dividend_warning else [],
+            },
             "message": "Connected using the official Trading 212 read-only API.",
         }
         _trading212_cache = result
         _trading212_cache_time = datetime.now(timezone.utc)
         return result
+
+
+
+MARKET_CACHE_TTL = timedelta(minutes=20)
+DAILY_CACHE_TTL = timedelta(hours=8)
+
+_market_engine_cache: dict[str, dict[str, Any]] = {}
+_market_engine_cache_time: dict[str, datetime] = {}
+_market_engine_lock = asyncio.Lock()
+
+STOOQ_FALLBACK_SYMBOLS: dict[str, str] = {
+    "EWU": "ewu.us", "SPY": "spy.us", "QQQ": "qqq.us", "DIA": "dia.us",
+    "IWM": "iwm.us", "EWG": "ewg.us", "EWQ": "ewq.us", "VGK": "vgk.us",
+    "EWJ": "ewj.us", "EWH": "ewh.us", "FXI": "fxi.us", "EWA": "ewa.us",
+    "EWC": "ewc.us", "INDA": "inda.us", "EWZ": "ewz.us", "UUP": "uup.us",
+    "GLD": "gld.us", "SLV": "slv.us",
+}
+
+
+def _engine_cache_get(key: str, ttl: timedelta) -> dict[str, Any] | None:
+    timestamp = _market_engine_cache_time.get(key)
+    if timestamp and datetime.now(timezone.utc) - timestamp < ttl:
+        return _market_engine_cache.get(key)
+    return None
+
+
+def _engine_cache_set(key: str, value: dict[str, Any]) -> dict[str, Any]:
+    _market_engine_cache[key] = value
+    _market_engine_cache_time[key] = datetime.now(timezone.utc)
+    return value
+
+
+async def _stooq_series(client: httpx.AsyncClient, symbol: str) -> list[dict[str, Any]]:
+    stooq_symbol = STOOQ_FALLBACK_SYMBOLS.get(symbol)
+    if not stooq_symbol:
+        return []
+    response = await client.get(
+        "https://stooq.com/q/d/l/",
+        params={
+            "s": stooq_symbol,
+            "i": "d",
+            "d1": (date.today() - timedelta(days=800)).strftime("%Y%m%d"),
+            "d2": date.today().strftime("%Y%m%d"),
+        },
+        headers={"User-Agent": "InstitutionalTerminal/9.0"},
+    )
+    response.raise_for_status()
+    lines = response.text.strip().splitlines()
+    if len(lines) < 3:
+        return []
+    rows = []
+    for line in lines[1:]:
+        parts = line.split(",")
+        if len(parts) < 5:
+            continue
+        try:
+            rows.append({
+                "datetime": parts[0],
+                "open": float(parts[1]),
+                "high": float(parts[2]),
+                "low": float(parts[3]),
+                "close": float(parts[4]),
+                "volume": float(parts[5]) if len(parts) > 5 and parts[5] else 0,
+            })
+        except (TypeError, ValueError):
+            continue
+    return rows
+
+
+async def resilient_daily_series(symbol: str, outputsize: int = 260) -> dict[str, Any]:
+    cache_key = f"daily:{symbol}:{outputsize}"
+    cached = _engine_cache_get(cache_key, DAILY_CACHE_TTL)
+    if cached:
+        return {**cached, "cache": "hit"}
+
+    attempts = []
+    api_key = os.getenv("TWELVE_DATA_API_KEY")
+    if api_key:
+        try:
+            async with httpx.AsyncClient(timeout=45, follow_redirects=True) as client:
+                response = await client.get(
+                    "https://api.twelvedata.com/time_series",
+                    params={
+                        "symbol": symbol, "interval": "1day",
+                        "outputsize": outputsize, "apikey": api_key,
+                        "format": "JSON", "order": "ASC",
+                    },
+                )
+                if response.status_code != 429:
+                    response.raise_for_status()
+                    payload = response.json()
+                    values = payload.get("values", [])
+                    if values:
+                        return _engine_cache_set(cache_key, {
+                            "provider": "Twelve Data", "symbol": symbol,
+                            "values": values, "fallback_used": False,
+                            "attempts": attempts,
+                        })
+                    attempts.append({"provider": "Twelve Data", "message": payload.get("message", "No data")})
+                else:
+                    attempts.append({"provider": "Twelve Data", "message": "Rate limit reached"})
+        except Exception as exc:
+            attempts.append({"provider": "Twelve Data", "message": str(exc)})
+    else:
+        attempts.append({"provider": "Twelve Data", "message": "API key missing"})
+
+    try:
+        async with httpx.AsyncClient(timeout=45, follow_redirects=True) as client:
+            values = await _stooq_series(client, symbol)
+        if values:
+            return _engine_cache_set(cache_key, {
+                "provider": "Stooq",
+                "symbol": STOOQ_FALLBACK_SYMBOLS.get(symbol, symbol),
+                "requested_symbol": symbol,
+                "values": values[-outputsize:],
+                "fallback_used": True,
+                "attempts": attempts,
+            })
+        attempts.append({"provider": "Stooq", "message": "No fallback data"})
+    except Exception as exc:
+        attempts.append({"provider": "Stooq", "message": str(exc)})
+
+    stale = _market_engine_cache.get(cache_key)
+    if stale:
+        return {**stale, "stale": True, "cache": "stale", "attempts": attempts}
+    return {"provider": None, "symbol": symbol, "values": [], "attempts": attempts, "message": "All providers failed"}
+
+
+async def resilient_global_markets() -> dict[str, Any]:
+    cache_key = "global_markets_v9"
+    cached = _engine_cache_get(cache_key, MARKET_CACHE_TTL)
+    if cached:
+        return {**cached, "cache": "hit"}
+
+    rows = []
+    providers: dict[str, int] = {}
+    for market_name, definition in FREE_MARKET_PROXIES.items():
+        symbol = definition["symbol"]
+        series = await resilient_daily_series(symbol, 260)
+        values = series.get("values", [])
+        closes = []
+        for item in values:
+            try:
+                closes.append({"date": str(item.get("datetime", ""))[:10], "close": float(item["close"])})
+            except (KeyError, TypeError, ValueError):
+                continue
+        if len(closes) < 2:
+            rows.append({
+                "market": market_name, "symbol": symbol, "available": False,
+                "provider": series.get("provider"), "message": series.get("message", "Unavailable"),
+            })
+            continue
+
+        latest = closes[-1]["close"]
+        weekly_base = closes[-6]["close"] if len(closes) >= 6 else closes[0]["close"]
+        monthly_base = closes[-22]["close"] if len(closes) >= 22 else closes[0]["close"]
+        provider = series.get("provider") or "Unknown"
+        providers[provider] = providers.get(provider, 0) + 1
+        rows.append({
+            "market": market_name,
+            "symbol": symbol,
+            "label": definition.get("label", market_name),
+            "available": True,
+            "latest": round(latest, 4),
+            "weekly_change_pct": round((latest / weekly_base - 1) * 100 if weekly_base else 0, 2),
+            "monthly_change_pct": round((latest / monthly_base - 1) * 100 if monthly_base else 0, 2),
+            "provider": provider,
+            "fallback_used": bool(series.get("fallback_used")),
+            "history": closes[-90:],
+        })
+
+    available = [r for r in rows if r.get("available")]
+    avg = sum(r["weekly_change_pct"] for r in available) / len(available) if available else None
+    regime = "Unavailable" if avg is None else "Risk-on" if avg > .35 else "Risk-off" if avg < -.35 else "Mixed"
+    return _engine_cache_set(cache_key, {
+        "configured": True,
+        "markets": rows,
+        "risk_regime": regime,
+        "average_weekly_change_pct": round(avg, 2) if avg is not None else None,
+        "provider_counts": providers,
+        "cache_minutes": 20,
+        "message": "Twelve Data primary with automatic Stooq fallback.",
+    })
+
+
+async def refresh_resilient_market_cache() -> dict[str, Any]:
+    _market_engine_cache.pop("global_markets_v9", None)
+    _market_engine_cache_time.pop("global_markets_v9", None)
+    result = await resilient_global_markets()
+    return {
+        "status": "complete",
+        "markets": len(result.get("markets", [])),
+        "providers": result.get("provider_counts", {}),
+        "refreshed_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+def market_engine_status() -> dict[str, Any]:
+    now = datetime.now(timezone.utc)
+    return {
+        "twelve_data_configured": bool(os.getenv("TWELVE_DATA_API_KEY")),
+        "providers": [
+            {"name": "Twelve Data", "role": "Primary market prices and specialist symbols"},
+            {"name": "Stooq", "role": "Automatic free fallback for supported ETFs and proxies"},
+            {"name": "FRED", "role": "Macroeconomic data and bond yields"},
+            {"name": "CFTC", "role": "Weekly COT positioning"},
+        ],
+        "cache_policy": {
+            "global_markets": "20 minutes",
+            "daily_history": "8 hours",
+            "news": "10 minutes",
+            "macro": "12 hours",
+            "cot": "weekly",
+            "seasonality": "monthly",
+            "trading_212": "2 minutes",
+        },
+        "cached_items": [
+            {
+                "key": key,
+                "updated_at": timestamp.isoformat(),
+                "age_seconds": round((now - timestamp).total_seconds()),
+            }
+            for key, timestamp in sorted(_market_engine_cache_time.items())
+        ],
+    }
 
 
 scheduler = AsyncIOScheduler(timezone="UTC")
@@ -2446,6 +2727,13 @@ async def lifespan(_: FastAPI):
         hour=22,
         minute=30,
         id="weekly-cot-refresh",
+        replace_existing=True,
+    )
+    scheduler.add_job(
+        refresh_resilient_market_cache,
+        "interval",
+        minutes=20,
+        id="resilient-market-cache-refresh",
         replace_existing=True,
     )
     scheduler.add_job(
@@ -2485,7 +2773,7 @@ async def lifespan(_: FastAPI):
     scheduler.shutdown(wait=False)
 
 
-app = FastAPI(title="Institutional Market Intelligence Terminal v8.6 My Portfolio", lifespan=lifespan)
+app = FastAPI(title="Institutional Market Intelligence Terminal v9.1 Trading 212 Stability and 104-Week COT", lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
@@ -2648,7 +2936,7 @@ async def get_cot_price_overlay(market: str) -> dict[str, Any]:
 
 @app.get("/api/markets")
 async def markets() -> dict[str, Any]:
-    return await twelve_data_free_markets()
+    return await resilient_global_markets()
 
 
 @app.get("/api/intelligence")
@@ -2707,8 +2995,90 @@ async def remove_technical_setup(pair: str) -> dict[str, Any]:
 
 
 @app.get("/api/portfolio/trading212")
-async def get_trading212_portfolio(force: bool = False) -> dict[str, Any]:
-    return await trading212_portfolio(force=force)
+async def get_trading212_portfolio(force: bool = False):
+    try:
+        return await trading212_portfolio(force=force)
+    except HTTPException as exc:
+        detail = exc.detail if isinstance(exc.detail, dict) else {
+            "code": "trading212_http_error",
+            "message": str(exc.detail),
+        }
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={
+                "configured": True,
+                "connected": False,
+                "environment": trading212_configuration()["environment"],
+                "read_only": True,
+                "error": detail,
+                "message": detail.get("message", "Trading 212 connection failed."),
+                "summary": {},
+                "positions": [],
+                "allocation": [],
+                "dividends": [],
+                "diagnostics": {
+                    "environment": trading212_configuration()["environment"],
+                    "account_summary": "failed",
+                    "positions": "failed",
+                    "dividends": "not checked",
+                    "warnings": [],
+                },
+            },
+        )
+    except Exception as exc:
+        logger.exception("Unexpected Trading 212 portfolio error")
+        return JSONResponse(
+            status_code=500,
+            content={
+                "configured": True,
+                "connected": False,
+                "environment": trading212_configuration()["environment"],
+                "read_only": True,
+                "error": {
+                    "code": "trading212_internal_error",
+                    "message": "The dashboard encountered an internal Trading 212 error.",
+                },
+                "message": "The dashboard encountered an internal Trading 212 error.",
+                "summary": {},
+                "positions": [],
+                "allocation": [],
+                "dividends": [],
+                "diagnostics": {
+                    "environment": trading212_configuration()["environment"],
+                    "account_summary": "failed",
+                    "positions": "failed",
+                    "dividends": "not checked",
+                    "warnings": [],
+                },
+            },
+        )
+
+
+@app.get("/api/market-engine/status")
+async def get_market_engine_status() -> dict[str, Any]:
+    return market_engine_status()
+
+
+@app.post("/api/market-engine/refresh")
+async def refresh_market_engine() -> dict[str, Any]:
+    return await refresh_resilient_market_cache()
+
+
+
+
+@app.get("/api/portfolio/trading212/status")
+async def get_trading212_status() -> dict[str, Any]:
+    config = trading212_configuration()
+    return {
+        "configured": bool(config.get("api_key") and config.get("api_secret")),
+        "environment": config["environment"],
+        "read_only": True,
+        "checks": {
+            "api_key_present": bool(config.get("api_key")),
+            "api_secret_present": bool(config.get("api_secret")),
+            "environment_valid": config["environment"] in {"live", "demo"},
+        },
+    }
 
 
 @app.get("/api/providers")
