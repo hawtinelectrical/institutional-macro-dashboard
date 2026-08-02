@@ -117,6 +117,22 @@ footer{text-align:center;color:#7d92aa;padding:18px}
 @media(max-width:1100px){.app{grid-template-columns:1fr}.sidebar{height:auto;position:static}nav{grid-template-columns:repeat(4,1fr)}.nav{text-align:center}.version{display:none}}
 @media(max-width:800px){.grid4,.grid3{grid-template-columns:1fr 1fr}.cols{grid-template-columns:1fr}}
 @media(max-width:520px){.content{padding:12px}.grid4,.grid3{grid-template-columns:1fr}nav{grid-template-columns:1fr 1fr}}
+
+.nav-group{display:grid;gap:4px}
+.nav-group-toggle{width:100%;border:1px solid rgba(39,211,228,.25);background:rgba(39,211,228,.08);color:#dcecff;padding:11px 12px;border-radius:8px;text-align:left;font-weight:900;cursor:pointer}
+.nav-group-toggle::after{content:"▾";float:right}
+.nav-group.collapsed .nav-group-toggle::after{content:"▸"}
+.nav-submenu{display:grid;gap:4px;padding-left:12px}
+.nav-group.collapsed .nav-submenu{display:none}
+.nav.subnav{font-size:.88rem;padding:9px 10px;border-left:2px solid rgba(39,211,228,.25)}
+.matrix-score{font-size:1.3rem;font-weight:1000}
+.matrix-positive{color:#28d18b}.matrix-negative{color:#f25f6c}.matrix-neutral{color:#f0c84b}
+.matrix-bar{height:16px;background:rgba(143,165,187,.16);border-radius:18px;position:relative;overflow:hidden}
+.matrix-bar::after{content:"";position:absolute;left:50%;top:0;bottom:0;width:1px;background:rgba(255,255,255,.35)}
+.matrix-fill-positive{position:absolute;left:50%;top:2px;bottom:2px;background:#28d18b;border-radius:16px}
+.matrix-fill-negative{position:absolute;right:50%;top:2px;bottom:2px;background:#f25f6c;border-radius:16px}
+.matrix-fill-neutral{position:absolute;left:48%;width:4%;top:2px;bottom:2px;background:#f0c84b;border-radius:16px}
+
 </style>
 </head>
 <body>
@@ -126,23 +142,29 @@ footer{text-align:center;color:#7d92aa;padding:18px}
  <nav>
   <button class="nav active" data-page="overview">Overview</button>
   <button class="nav" data-page="brief">Daily Brief</button>
-  <button class="nav" data-page="cot">COT Relationship</button>
-  <button class="nav" data-page="currencies">Currency Intelligence</button>
-  <button class="nav" data-page="pairs">Pair Rankings</button>
+  <div class="nav-group" id="cotNavGroup">
+   <button class="nav-group-toggle" id="cotNavToggle" type="button">COT Data</button>
+   <div class="nav-submenu">
+    <button class="nav subnav" data-page="cot">COT Positioning</button>
+    <button class="nav subnav" data-page="currencies">Currency Intelligence</button>
+    <button class="nav subnav" data-page="strength">Currency Strength Matrix</button>
+    <button class="nav subnav" data-page="pairs">Pair Rankings</button>
+    <button class="nav subnav" data-page="seasonality">Seasonality</button>
+   </div>
+  </div>
   <button class="nav" data-page="setups">TradingView Setups</button>
   <button class="nav" data-page="metals">Precious Metals</button>
   <button class="nav" data-page="markets">Global Markets</button>
   <button class="nav" data-page="bonds">Bonds & Rates</button>
   <button class="nav" data-page="news">News Intelligence</button>
   <button class="nav" data-page="calendar">Economic Calendar</button>
-  <button class="nav" data-page="seasonality">Seasonality</button>
   <button class="nav" data-page="alignment">Alignment Engine</button>
   <button class="nav" data-page="outlooks">Outlooks</button>
   <button class="nav" data-page="portfolio">My Portfolio</button>
   <button class="nav" data-page="dataengine">Data Engine</button>
   <button class="nav" data-page="providers">Data Connections</button>
  </nav>
- <div class="version">Version 9.2<br>T212 Cash Parser Fix</div>
+ <div class="version">Version 10<br>Currency Strength Matrix</div>
 </aside>
 
 <main class="content">
@@ -168,7 +190,7 @@ footer{text-align:center;color:#7d92aa;padding:18px}
  <div class="cols">
   <article class="panel blue">
  <div class="heading"><div><h3>Version 7 evidence rules</h3><p>Transparent architecture for every future score.</p></div></div>
- <div class="provider"><span>COT relationship</span><strong>Live</strong></div>
+ <div class="provider"><span>COT data</span><strong>Live</strong></div>
  <div class="provider"><span>Global market regime</span><strong>Free ETF proxies when connected</strong></div>
  <div class="provider"><span>Official central-bank news</span><strong>Live RSS</strong></div>
  <div class="provider"><span>Price / TradingView confirmation</span><strong>Required before trade confirmation</strong></div>
@@ -188,7 +210,7 @@ footer{text-align:center;color:#7d92aa;padding:18px}
  </div>
  <div class="grid4">
   <article class="metric"><span>Market regime</span><strong id="briefRegime">—</strong><small>Global equity proxies</small></article>
-  <article class="metric"><span>Strongest relationship</span><strong id="briefStrongest">—</strong><small>COT relationship</small></article>
+  <article class="metric"><span>Strongest relationship</span><strong id="briefStrongest">—</strong><small>COT data</small></article>
   <article class="metric"><span>Preferred pair for review</span><strong id="briefPair">—</strong><small>Not an entry signal</small></article>
   <article class="metric"><span>Next major event</span><strong id="briefNextEvent">—</strong><small>Calendar risk</small></article>
  </div>
@@ -217,6 +239,8 @@ footer{text-align:center;color:#7d92aa;padding:18px}
    <label>Graph <select id="chartMode"><option value="net">Net position</option><option value="change">Weekly buying / selling</option></select></label>
   </div>
   <div id="cotChart" class="chart-wrap"></div><div id="cotPriceOverlayStatus" class="status">Price overlay loading…</div>
+   <p style="color:var(--muted);font-size:.85rem">Exactly 104 weekly COT reports are shown, with 104 matching weekly candles aligned to the same date range.</p>
+   <p style="color:var(--muted);font-size:.85rem">USD overlay hierarchy: synthetic six-currency basket first, then UUP proxy. Synthetic values are rebased and are for directional context, not the official ICE settlement level.</p>
   <div class="legend"><span class="legend-key"><i class="swatch" style="background:#28d18b"></i>Commercial</span><span class="legend-key"><i class="swatch" style="background:#f25f6c"></i>Non-commercial</span></div>
  </article>
  <div class="cols">
@@ -231,7 +255,7 @@ footer{text-align:center;color:#7d92aa;padding:18px}
 
 
 <section id="currencies" class="page">
- <div class="hero"><div class="kicker">CURRENCY INTELLIGENCE</div><h2>Dedicated Currency Analysis</h2><p>Each major currency combines COT relationship, seasonality, relevant news, calendar risk, global regime and available rate evidence.</p></div>
+ <div class="hero"><div class="kicker">CURRENCY INTELLIGENCE</div><h2>Dedicated Currency Analysis</h2><p>Each major currency combines COT data, seasonality, relevant news, calendar risk, global regime and available rate evidence.</p></div>
  <div class="controls">
   <label>Currency <select id="currencyIntelSelect"></select></label>
   <label>Horizon <select id="currencyHorizon"><option>Daily</option><option>Weekly</option><option>Monthly</option><option>6-Month</option><option>Yearly</option></select></label>
@@ -250,6 +274,64 @@ footer{text-align:center;color:#7d92aa;padding:18px}
   <article class="panel purple"><div class="heading"><div><h3>Relevant financial news</h3><p>Latest stories tagged to the selected currency.</p></div></div><div id="currencyNews" class="news-list"></div></article>
   <article class="panel red"><div class="heading"><div><h3>Upcoming calendar risks</h3><p>Events affecting the selected currency.</p></div></div><div id="currencyCalendar" class="calendar-list"></div></article>
  </div>
+</section>
+
+
+<section id="strength" class="page">
+ <div class="hero">
+  <div class="kicker">28 DAILY CURRENCY PAIRS</div>
+  <h2>Currency Strength Matrix</h2>
+  <p>Each pair is scored from its two most recent confirmed highs and two most recent confirmed lows. Pair trends award opposite scores to the base and quote currencies.</p>
+ </div>
+
+ <div class="grid4">
+  <article class="metric"><span>Strongest</span><strong id="matrixStrongest">—</strong><small id="matrixStrongestScore">Awaiting calculation</small></article>
+  <article class="metric"><span>Weakest</span><strong id="matrixWeakest">—</strong><small id="matrixWeakestScore">Awaiting calculation</small></article>
+  <article class="metric"><span>Largest strength gap</span><strong id="matrixBestPair">—</strong><small id="matrixBestDirection">Awaiting calculation</small></article>
+  <article class="metric"><span>Last update</span><strong id="matrixUpdated">—</strong><small>Completed daily candles only</small></article>
+ </div>
+
+ <div class="controls">
+  <span class="status live">Self-updating every 6 hours</span>
+  <span class="status">28 pairs</span>
+  <span class="status">Score range −7 to +7</span>
+  <span id="matrixStatus" class="status">Loading matrix…</span>
+ </div>
+
+ <div class="cols">
+  <article class="panel blue">
+   <div class="heading"><div><h3>Currency ranking</h3><p>Each currency is scored against all seven other currencies.</p></div></div>
+   <div id="matrixRanking"></div>
+  </article>
+
+  <article class="panel purple">
+   <div class="heading"><div><h3>Four chart patterns</h3><p>The matrix follows the pair-structure rules exactly.</p></div></div>
+   <div class="provider"><span>Pattern A: higher highs + higher lows</span><strong class="on">Base +1 / Quote −1</strong></div>
+   <div class="provider"><span>Pattern B: lower highs + lower lows</span><strong class="off">Base −1 / Quote +1</strong></div>
+   <div class="provider"><span>Pattern C: higher highs + lower lows</span><strong>Both 0</strong></div>
+   <div class="provider"><span>Pattern D: lower highs + higher lows</span><strong>Both 0</strong></div>
+  </article>
+ </div>
+
+ <article class="panel green">
+  <div class="heading"><div><h3>Pair structure table</h3><p>All 28 daily pair charts and the award given to each currency.</p></div></div>
+  <div class="table-wrap">
+   <table>
+    <thead><tr><th>Pair</th><th>Pattern</th><th>Trend</th><th>Base award</th><th>Quote award</th><th>Provider</th><th>Last candle</th></tr></thead>
+    <tbody id="matrixPairRows"></tbody>
+   </table>
+  </div>
+ </article>
+
+ <article class="panel gold">
+  <div class="heading"><div><h3>Strongest-versus-weakest opportunities</h3><p>Largest score differences appear first. These are directional candidates, not automatic entries.</p></div></div>
+  <div class="table-wrap">
+   <table>
+    <thead><tr><th>Rank</th><th>Pair</th><th>Direction</th><th>Base score</th><th>Quote score</th><th>Gap</th></tr></thead>
+    <tbody id="matrixOpportunityRows"></tbody>
+   </table>
+  </div>
+ </article>
 </section>
 
 <section id="pairs" class="page">
@@ -322,7 +404,7 @@ footer{text-align:center;color:#7d92aa;padding:18px}
 </section>
 
 <section id="metals" class="page">
- <div class="hero"><div class="kicker">PRECIOUS METALS</div><h2>Gold, Silver, Platinum and Palladium</h2><p>Live COT relationship data is available now. Price, real-yield and USD confirmation activate when provider keys are connected.</p></div>
+ <div class="hero"><div class="kicker">PRECIOUS METALS</div><h2>Gold, Silver, Platinum and Palladium</h2><p>Live COT data data is available now. Price, real-yield and USD confirmation activate when provider keys are connected.</p></div>
  <div id="metalCards" class="grid4"></div>
  <div class="cols">
   <article class="panel gold"><div class="heading"><div><h3>Metal COT trend</h3><p>Commercial and Non-commercial positioning.</p></div><select id="metalSelect"></select></div><div id="metalChart" class="chart-wrap"></div></article>
@@ -684,6 +766,7 @@ footer{text-align:center;color:#7d92aa;padding:18px}
 let cotData=null, newsData=[], newsMeta={}, providerData={}, calendarData={configured:false,events:[]}, macroData={}, marketsData={}, briefData={}, setupData=[];
 let portfolioData={configured:false,connected:false,summary:{},positions:[],allocation:[],dividends:[]};
 let dataEngineStatus={providers:[],cache_policy:{},cached_items:[]};
+let currencyMatrixData={ranking:[],pairs:[],opportunities:[]};
 let cotOverlay={candles:[]};let cotOverlayMarket=null;
 let activeHorizon="Daily";
 const months=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
@@ -783,7 +866,7 @@ function drawChart(targetId,market,mode="net",showC=true,showN=true){
  const showPrice=targetId==="cotChart"&&document.getElementById("showPriceCandles")?.checked;
  const opacity=Number(document.getElementById("priceCandleOpacity")?.value||20)/100;
  if(showPrice&&cotOverlayMarket===market&&cotOverlay.candles?.length){
-  const aligned=nearestOverlayCandles(rows,cotOverlay.candles);
+  const aligned=nearestOverlayCandles(rows,cotOverlay.candles).slice(-104);
   const valid=aligned.filter(Boolean);
   const prices=valid.flatMap(c=>[c.low,c.high]);
   if(prices.length){
@@ -810,7 +893,9 @@ async function loadCotOverlay(market){
  status.textContent="Price overlay loading…";
  try{cotOverlay=await (await fetch(`/api/cot/price-overlay/${encodeURIComponent(market)}`)).json()}
  catch(error){cotOverlay={candles:[],message:error.message}}
- status.textContent=cotOverlay.candles?.length?`${cotOverlay.source_label} • ${cotOverlay.symbol}${cotOverlay.fallback_used?" • fallback":""}`:(cotOverlay.message||"Price overlay unavailable.");
+ status.textContent=cotOverlay.candles?.length
+  ? `${cotOverlay.source_label} • ${cotOverlay.symbol}${cotOverlay.synthetic?" • synthetic":cotOverlay.fallback_used?" • fallback":""}`
+  : (cotOverlay.message||"Price overlay unavailable.");
  status.className=`status ${cotOverlay.candles?.length?"live":"error"}`;
 }
 function renderCotChart(){
@@ -1130,7 +1215,10 @@ async function refreshAutomaticSeasonality(group){
   message.textContent=`${payload.updated}/${payload.total} markets updated`;
   message.className="status live";
   await loadSeasonality();
-  await loadAutoSeasonalityStatus();
+  await document.getElementById("cotNavToggle").addEventListener("click",()=>{
+ document.getElementById("cotNavGroup").classList.toggle("collapsed");
+});
+loadAutoSeasonalityStatus();
   renderCurrencyIntelligence();
   renderPairRankings();
   renderAlignment();
@@ -1437,7 +1525,7 @@ function renderOutlook(){
  const market=document.getElementById("outlookMarket").value,r=relationship(market),season=seasonalScore(market,activeHorizon);
  let available=1,total=0;const evidence=[];
  const relationContribution=Math.max(-50,Math.min(50,r.relation/Math.max(1,Math.abs(r.commercial)+Math.abs(r.noncommercial))*50));total+=relationContribution;
- evidence.push(["COT relationship",`${r.bias} (${relationContribution.toFixed(0)})`]);
+ evidence.push(["COT data",`${r.bias} (${relationContribution.toFixed(0)})`]);
  if(season!=null){available++;total+=Math.max(-25,Math.min(25,season*5));evidence.push(["Seasonality",`${season.toFixed(2)}% tendency`])}
  const relevantNews=newsData.filter(n=>n.affected_markets.includes(market)&&n.impact==="High").length;if(relevantNews){available++;evidence.push(["High-impact news",`${relevantNews} current stories`])}
  if(macroData.configured){
@@ -1464,7 +1552,7 @@ function currencyEvidenceScore(market,horizon){
  const denom=Math.max(1,Math.abs(r.commercial)+Math.abs(r.noncommercial));
  const cotContribution=Math.max(-30,Math.min(30,r.relation/denom*30));
  score+=cotContribution;
- evidence.push({name:"COT relationship",value:r.bias,points:Math.round(cotContribution),available:true});
+ evidence.push({name:"COT data",value:r.bias,points:Math.round(cotContribution),available:true});
 
  const season=seasonalScore(market,horizon);
  if(season!=null){
@@ -1844,7 +1932,73 @@ async function refreshDataEngine(){
   if(!response.ok)throw new Error(payload.detail||"Refresh failed");
   status.textContent=`Refreshed ${payload.markets} markets`;status.className="status live";
   marketsData=await (await fetch("/api/markets")).json();renderMarkets();await loadDataEngineStatus();
+loadCurrencyMatrix();
  }catch(error){status.textContent=error.message;status.className="status error"}
+}
+
+
+function matrixScoreClass(score){
+ return score>0?"matrix-positive":score<0?"matrix-negative":"matrix-neutral";
+}
+function renderCurrencyMatrix(){
+ const ranking=currencyMatrixData.ranking||[];
+ const pairs=currencyMatrixData.pairs||[];
+ const opportunities=currencyMatrixData.opportunities||[];
+ const strongest=currencyMatrixData.strongest;
+ const weakest=currencyMatrixData.weakest;
+ const best=opportunities[0];
+
+ document.getElementById("matrixStrongest").textContent=strongest?.currency||"—";
+ document.getElementById("matrixStrongestScore").textContent=strongest?`${strongest.score>0?"+":""}${strongest.score} • ${strongest.classification}`:"Awaiting calculation";
+ document.getElementById("matrixWeakest").textContent=weakest?.currency||"—";
+ document.getElementById("matrixWeakestScore").textContent=weakest?`${weakest.score>0?"+":""}${weakest.score} • ${weakest.classification}`:"Awaiting calculation";
+ document.getElementById("matrixBestPair").textContent=best?.pair||"—";
+ document.getElementById("matrixBestDirection").textContent=best?`${best.direction} • gap ${best.strength_gap}`:"Awaiting calculation";
+ document.getElementById("matrixUpdated").textContent=currencyMatrixData.updated_at?new Date(currencyMatrixData.updated_at).toLocaleString("en-GB"):"—";
+
+ document.getElementById("matrixRanking").innerHTML=ranking.map(row=>{
+  const cls=matrixScoreClass(row.score);
+  const width=Math.abs(row.score)/7*50;
+  return `<div class="alignment-bar">
+   <strong>${row.currency}</strong>
+   <div class="matrix-bar">
+    ${row.score>0?`<div class="matrix-fill-positive" style="width:${width}%"></div>`:row.score<0?`<div class="matrix-fill-negative" style="width:${width}%"></div>`:'<div class="matrix-fill-neutral"></div>'}
+   </div>
+   <span class="matrix-score ${cls}">${row.score>0?"+":""}${row.score}</span>
+  </div>`;
+ }).join("")||'<div class="message">No matrix result available yet.</div>';
+
+ document.getElementById("matrixPairRows").innerHTML=pairs.map(row=>`<tr>
+  <td><strong>${row.pair}</strong></td>
+  <td>${row.pattern}</td>
+  <td class="${row.pair_score>0?"on":row.pair_score<0?"off":""}">${row.trend}</td>
+  <td class="${row.base_award>0?"on":row.base_award<0?"off":""}">${row.base_award>0?"+":""}${row.base_award}</td>
+  <td class="${row.quote_award>0?"on":row.quote_award<0?"off":""}">${row.quote_award>0?"+":""}${row.quote_award}</td>
+  <td>${row.provider}</td>
+  <td>${row.last_completed_candle||"—"}</td>
+ </tr>`).join("")||'<tr><td colspan="7">No pair data available.</td></tr>';
+
+ document.getElementById("matrixOpportunityRows").innerHTML=opportunities.slice(0,15).map((row,index)=>`<tr>
+  <td>${index+1}</td>
+  <td><strong>${row.pair}</strong></td>
+  <td class="${row.direction.startsWith("Long")?"on":row.direction.startsWith("Short")?"off":""}">${row.direction}</td>
+  <td>${row.base_score>0?"+":""}${row.base_score}</td>
+  <td>${row.quote_score>0?"+":""}${row.quote_score}</td>
+  <td>${row.strength_gap}</td>
+ </tr>`).join("")||'<tr><td colspan="6">No ranked opportunities available.</td></tr>';
+
+ const status=document.getElementById("matrixStatus");
+ status.textContent=currencyMatrixData.updated_at?"Matrix current":"Waiting for server calculation";
+ status.className=`status ${currencyMatrixData.updated_at?"live":"error"}`;
+}
+async function loadCurrencyMatrix(){
+ try{
+  const response=await fetch("/api/currency-strength-matrix");
+  currencyMatrixData=await response.json();
+ }catch(error){
+  currencyMatrixData={ranking:[],pairs:[],opportunities:[],message:error.message};
+ }
+ renderCurrencyMatrix();
 }
 
 async function loadAll(){
