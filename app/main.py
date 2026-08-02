@@ -90,6 +90,20 @@ FREE_MARKET_PROXIES: dict[str, dict[str, str]] = {
 # Automatic seasonality is calculated from monthly closing prices.
 # The free Twelve Data plan is respected by splitting the universe into
 # two groups of no more than eight symbols.
+
+COT_PRICE_OVERLAY_SYMBOLS: dict[str, dict[str, Any]] = {
+    "USD": {"symbols": ["DXY", "DXY:ICE", "UUP"], "label": "US Dollar Index", "fallback_label": "UUP Dollar Index ETF proxy"},
+    "AUD": {"symbols": ["6A1!", "6A1!:CME", "AUD/USD"], "label": "Australian Dollar futures", "fallback_label": "AUD/USD spot fallback"},
+    "EUR": {"symbols": ["6E1!", "6E1!:CME", "EUR/USD"], "label": "Euro FX futures", "fallback_label": "EUR/USD spot fallback"},
+    "GBP": {"symbols": ["6B1!", "6B1!:CME", "GBP/USD"], "label": "British Pound futures", "fallback_label": "GBP/USD spot fallback"},
+    "CAD": {"symbols": ["6C1!", "6C1!:CME", "USD/CAD"], "label": "Canadian Dollar futures", "fallback_label": "USD/CAD spot fallback", "invert_fallback": True},
+    "JPY": {"symbols": ["6J1!", "6J1!:CME", "USD/JPY"], "label": "Japanese Yen futures", "fallback_label": "USD/JPY spot fallback", "invert_fallback": True},
+    "CHF": {"symbols": ["6S1!", "6S1!:CME", "USD/CHF"], "label": "Swiss Franc futures", "fallback_label": "USD/CHF spot fallback", "invert_fallback": True},
+    "NZD": {"symbols": ["6N1!", "6N1!:CME", "NZD/USD"], "label": "New Zealand Dollar futures", "fallback_label": "NZD/USD spot fallback"},
+    "GOLD": {"symbols": ["GC1!", "GC1!:COMEX", "XAU/USD"], "label": "Gold futures", "fallback_label": "Gold spot fallback"},
+    "SILVER": {"symbols": ["SI1!", "SI1!:COMEX", "XAG/USD"], "label": "Silver futures", "fallback_label": "Silver spot fallback"},
+}
+
 AUTO_SEASONALITY_GROUPS: dict[str, dict[str, dict[str, Any]]] = {
     "core": {
         "USD": {"symbol": "UUP", "invert": False, "label": "US Dollar proxy"},
@@ -2131,6 +2145,94 @@ def direct_pair_seasonality(
     }
 
 
+
+_cot_overlay_cache: dict[str, dict[str, Any]] = {}
+_cot_overlay_cache_time: dict[str, datetime] = {}
+_cot_overlay_lock = asyncio.Lock()
+COT_OVERLAY_TTL = timedelta(hours=6)
+
+
+def _prepare_overlay(values: list[dict[str, Any]], invert: bool = False) -> list[dict[str, Any]]:
+    output = []
+    for row in values:
+        try:
+            o, h, l, c = [float(row[key]) for key in ("open", "high", "low", "close")]
+            if min(o, h, l, c) <= 0:
+                continue
+            if invert:
+                o, c, h, l = 1/o, 1/c, 1/l, 1/h
+            output.append({
+                "date": str(row.get("datetime", ""))[:10],
+                "open": o, "high": h, "low": l, "close": c,
+            })
+        except (KeyError, TypeError, ValueError, ZeroDivisionError):
+            continue
+    return sorted(output, key=lambda item: item["date"])
+
+
+async def cot_price_overlay(market: str) -> dict[str, Any]:
+    market = market.upper()
+    definition = COT_PRICE_OVERLAY_SYMBOLS.get(market)
+    if not definition:
+        return {"configured": False, "candles": [], "message": "No overlay mapping exists."}
+
+    now = datetime.now(timezone.utc)
+    cached = _cot_overlay_cache.get(market)
+    cached_at = _cot_overlay_cache_time.get(market)
+    if cached and cached_at and now - cached_at < COT_OVERLAY_TTL:
+        return cached
+
+    key = os.getenv("TWELVE_DATA_API_KEY")
+    if not key:
+        return {"configured": False, "candles": [], "message": "TWELVE_DATA_API_KEY is not configured."}
+
+    async with _cot_overlay_lock:
+        attempts = []
+        async with httpx.AsyncClient(timeout=60, follow_redirects=True) as client:
+            for index, symbol in enumerate(definition["symbols"]):
+                try:
+                    response = await client.get(
+                        "https://api.twelvedata.com/time_series",
+                        params={
+                            "symbol": symbol,
+                            "interval": "1week",
+                            "outputsize": 260,
+                            "apikey": key,
+                            "format": "JSON",
+                            "order": "ASC",
+                        },
+                    )
+                    if response.status_code == 429:
+                        return {"configured": True, "candles": [], "message": "Twelve Data rate limit reached."}
+                    response.raise_for_status()
+                    payload = response.json()
+                    if payload.get("status") == "error":
+                        attempts.append({"symbol": symbol, "message": payload.get("message", "Provider error")})
+                        continue
+                    values = payload.get("values", [])
+                    fallback = index == len(definition["symbols"]) - 1
+                    candles = _prepare_overlay(values, bool(fallback and definition.get("invert_fallback")))
+                    if len(candles) < 20:
+                        attempts.append({"symbol": symbol, "message": "Insufficient weekly OHLC history"})
+                        continue
+                    result = {
+                        "configured": True,
+                        "market": market,
+                        "symbol": symbol,
+                        "source_label": definition.get("fallback_label") if fallback else definition["label"],
+                        "fallback_used": fallback,
+                        "candles": candles,
+                        "attempts": attempts,
+                    }
+                    _cot_overlay_cache[market] = result
+                    _cot_overlay_cache_time[market] = datetime.now(timezone.utc)
+                    return result
+                except Exception as exc:
+                    attempts.append({"symbol": symbol, "message": str(exc)})
+
+    return {"configured": True, "candles": [], "attempts": attempts, "message": "No supported price series was returned."}
+
+
 scheduler = AsyncIOScheduler(timezone="UTC")
 
 
@@ -2183,7 +2285,7 @@ async def lifespan(_: FastAPI):
     scheduler.shutdown(wait=False)
 
 
-app = FastAPI(title="Institutional Market Intelligence Terminal v8.4 Seasonality Backtesting", lifespan=lifespan)
+app = FastAPI(title="Institutional Market Intelligence Terminal v8.5 COT Candle Overlay", lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
@@ -2337,6 +2439,11 @@ async def get_pair_seasonality(
     metric: str = "average_10y",
 ) -> dict[str, Any]:
     return direct_pair_seasonality(base, quote, metric)
+
+
+@app.get("/api/cot/price-overlay/{market}")
+async def get_cot_price_overlay(market: str) -> dict[str, Any]:
+    return await cot_price_overlay(market)
 
 
 @app.get("/api/markets")
