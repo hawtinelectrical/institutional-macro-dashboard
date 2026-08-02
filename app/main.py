@@ -2385,6 +2385,52 @@ def _t212_position(row: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+
+def _first_number(*values: Any, default: float = 0.0) -> float:
+    for value in values:
+        if value is None:
+            continue
+        if isinstance(value, bool):
+            return float(value)
+        if isinstance(value, (int, float)):
+            return float(value)
+        if isinstance(value, str):
+            try:
+                return float(value.replace(",", "").strip())
+            except ValueError:
+                continue
+        if isinstance(value, dict):
+            for key in (
+                "total",
+                "available",
+                "free",
+                "value",
+                "amount",
+                "cash",
+                "result",
+                "current",
+                "currentValue",
+                "totalValue",
+            ):
+                if key in value:
+                    nested = _first_number(value.get(key), default=None)
+                    if nested is not None:
+                        return nested
+    return default
+
+
+def _first_text(*values: Any, default: str = "") -> str:
+    for value in values:
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+        if isinstance(value, dict):
+            for key in ("code", "currency", "currencyCode", "primaryCurrency"):
+                nested = value.get(key)
+                if isinstance(nested, str) and nested.strip():
+                    return nested.strip()
+    return default
+
+
 async def trading212_portfolio(force: bool = False) -> dict[str, Any]:
     global _trading212_cache, _trading212_cache_time
 
@@ -2424,23 +2470,29 @@ async def trading212_portfolio(force: bool = False) -> dict[str, Any]:
         positions_value = sum(row["current_value"] for row in positions)
         invested = sum(row["invested_value"] for row in positions)
         profit = sum(row["profit_loss"] for row in positions)
-        cash = float(
-            summary_raw.get("cash")
-            or summary_raw.get("freeFunds")
-            or summary_raw.get("availableCash")
-            or 0
+        cash_payload = summary_raw.get("cash")
+        cash = _first_number(
+            cash_payload,
+            summary_raw.get("freeFunds"),
+            summary_raw.get("availableCash"),
+            summary_raw.get("cashAvailable"),
+            default=0.0,
         )
-        total_value = float(
-            summary_raw.get("totalValue")
-            or summary_raw.get("accountValue")
-            or summary_raw.get("portfolioValue")
-            or cash + positions_value
+
+        total_value = _first_number(
+            summary_raw.get("totalValue"),
+            summary_raw.get("accountValue"),
+            summary_raw.get("portfolioValue"),
+            summary_raw.get("total"),
+            default=cash + positions_value,
         )
-        currency = (
-            summary_raw.get("currency")
-            or summary_raw.get("currencyCode")
-            or summary_raw.get("primaryCurrency")
-            or "GBP"
+
+        currency = _first_text(
+            summary_raw.get("currency"),
+            summary_raw.get("currencyCode"),
+            summary_raw.get("primaryCurrency"),
+            cash_payload,
+            default="GBP",
         )
 
         allocation = [
@@ -2480,6 +2532,10 @@ async def trading212_portfolio(force: bool = False) -> dict[str, Any]:
                 "account_summary": "ok",
                 "positions": "ok",
                 "dividends": "warning" if dividend_warning else "ok",
+                "summary_shape": {
+                    "cash_type": type(summary_raw.get("cash")).__name__,
+                    "top_level_keys": sorted(summary_raw.keys()),
+                },
                 "warnings": [dividend_warning] if dividend_warning else [],
             },
             "message": "Connected using the official Trading 212 read-only API.",
@@ -2773,7 +2829,7 @@ async def lifespan(_: FastAPI):
     scheduler.shutdown(wait=False)
 
 
-app = FastAPI(title="Institutional Market Intelligence Terminal v9.1 Trading 212 Stability and 104-Week COT", lifespan=lifespan)
+app = FastAPI(title="Institutional Market Intelligence Terminal v9.2 Trading 212 Cash Parser Fix", lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
