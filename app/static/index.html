@@ -138,9 +138,10 @@ footer{text-align:center;color:#7d92aa;padding:18px}
   <button class="nav" data-page="seasonality">Seasonality</button>
   <button class="nav" data-page="alignment">Alignment Engine</button>
   <button class="nav" data-page="outlooks">Outlooks</button>
+  <button class="nav" data-page="portfolio">My Portfolio</button>
   <button class="nav" data-page="providers">Data Connections</button>
  </nav>
- <div class="version">Version 8.5<br>COT Candle Overlay</div>
+ <div class="version">Version 8.6<br>My Portfolio</div>
 </aside>
 
 <main class="content">
@@ -605,6 +606,42 @@ footer{text-align:center;color:#7d92aa;padding:18px}
  <div id="outlookContent"></div>
 </section>
 
+
+<section id="portfolio" class="page">
+ <div class="hero">
+  <div class="kicker">TRADING 212 • READ ONLY</div>
+  <h2>My Portfolio</h2>
+  <p>Live Invest or Stocks ISA holdings, cash, allocation, profit/loss and recent dividends. No order actions are included.</p>
+ </div>
+ <div id="portfolioMessage" class="message"></div>
+ <div class="grid4">
+  <article class="metric"><span>Total value</span><strong id="portfolioTotalValue">—</strong><small id="portfolioCurrency">Primary currency</small></article>
+  <article class="metric"><span>Cash</span><strong id="portfolioCash">—</strong><small>Available balance</small></article>
+  <article class="metric"><span>Unrealised P/L</span><strong id="portfolioProfitLoss">—</strong><small id="portfolioProfitLossPct">—</small></article>
+  <article class="metric"><span>Positions</span><strong id="portfolioPositionCount">—</strong><small id="portfolioEnvironment">Read only</small></article>
+ </div>
+ <div class="controls">
+  <button id="refreshPortfolio">Refresh portfolio</button>
+  <label>Sort
+   <select id="portfolioSort"><option value="value">Position value</option><option value="profit">Profit / loss</option><option value="weight">Weight</option><option value="name">Name</option></select>
+  </label>
+  <span id="portfolioRefreshStatus" class="status">Waiting for connection</span>
+ </div>
+ <div class="cols">
+  <article class="panel blue"><div class="heading"><div><h3>Allocation</h3><p>Largest positions by current value.</p></div></div><div id="portfolioAllocation"></div></article>
+  <article class="panel green"><div class="heading"><div><h3>Winners and losers</h3><p>Unrealised percentage performance.</p></div></div><div id="portfolioMovers"></div></article>
+ </div>
+ <article class="panel purple">
+  <div class="heading"><div><h3>Holdings</h3><p>Current positions and unrealised results.</p></div></div>
+  <div class="season-grid"><table class="season-table"><thead><tr><th>Holding</th><th>Quantity</th><th>Average</th><th>Current</th><th>Value</th><th>Weight</th><th>P/L</th><th>P/L %</th></tr></thead><tbody id="portfolioHoldingsBody"></tbody></table></div>
+ </article>
+ <article class="panel gold"><div class="heading"><div><h3>Recent dividends</h3><p>Latest records available to the API key.</p></div></div><div id="portfolioDividends"></div></article>
+ <article class="panel red">
+  <div class="heading"><div><h3>Connection security</h3><p>Credentials remain server-side in Render.</p></div></div>
+  <div class="interpretation neutral"><h4>Read-only design</h4><p>This build retrieves account summary, open positions and dividend history only. It contains no order-placement, cancellation or amendment endpoint.</p><p>Render variables: <strong>TRADING212_API_KEY</strong>, <strong>TRADING212_API_SECRET</strong>, and optional <strong>TRADING212_ENVIRONMENT</strong> set to <strong>live</strong> or <strong>demo</strong>.</p></div>
+ </article>
+</section>
+
 <section id="providers" class="page">
  <div class="hero"><div class="kicker">DATA CONNECTIONS</div><h2>Provider Status</h2><p>Live sources are shown clearly. Provider keys are stored privately in Render environment variables, never in the browser.</p></div>
  <article class="panel blue"><div id="providerList"></div></article>
@@ -617,6 +654,7 @@ footer{text-align:center;color:#7d92aa;padding:18px}
 
 <script>
 let cotData=null, newsData=[], newsMeta={}, providerData={}, calendarData={configured:false,events:[]}, macroData={}, marketsData={}, briefData={}, setupData=[];
+let portfolioData={configured:false,connected:false,summary:{},positions:[],allocation:[],dividends:[]};
 let cotOverlay={candles:[]};let cotOverlayMarket=null;
 let activeHorizon="Daily";
 const months=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
@@ -1645,6 +1683,70 @@ function loadTopPair(){
  document.getElementById("setupNotes").value=`Weekly macro difference ${top.gap}. ${top.base.market} ${top.base.bias}; ${top.quote.market} ${top.quote.bias}.`;
 }
 
+
+function portfolioMoney(value,currency){
+ try{return new Intl.NumberFormat("en-GB",{style:"currency",currency:currency||"GBP",maximumFractionDigits:2}).format(Number(value||0))}
+ catch{return `${currency||""} ${Number(value||0).toFixed(2)}`.trim()}
+}
+function sortedPortfolioPositions(){
+ const rows=[...(portfolioData.positions||[])],sort=document.getElementById("portfolioSort").value;
+ const weights=Object.fromEntries((portfolioData.allocation||[]).map(row=>[row.ticker,row.weight_pct]));
+ if(sort==="profit")rows.sort((a,b)=>b.profit_loss-a.profit_loss);
+ else if(sort==="weight")rows.sort((a,b)=>(weights[b.ticker]||0)-(weights[a.ticker]||0));
+ else if(sort==="name")rows.sort((a,b)=>(a.name||"").localeCompare(b.name||""));
+ else rows.sort((a,b)=>b.current_value-a.current_value);
+ return rows;
+}
+function renderPortfolio(){
+ const summary=portfolioData.summary||{},currency=summary.currency||"GBP";
+ const message=document.getElementById("portfolioMessage"),status=document.getElementById("portfolioRefreshStatus");
+ if(!portfolioData.configured){
+  message.textContent=portfolioData.message||"Trading 212 is not configured.";
+  status.textContent="Not configured";status.className="status error";
+ }else if(!portfolioData.connected){
+  message.textContent=portfolioData.message||"Trading 212 connection unavailable.";
+  status.textContent="Connection unavailable";status.className="status error";
+ }else{
+  message.textContent="";
+  status.textContent=`Connected • ${portfolioData.refreshed_at?new Date(portfolioData.refreshed_at).toLocaleString("en-GB"):"refreshed"}`;
+  status.className="status live";
+ }
+ document.getElementById("portfolioTotalValue").textContent=portfolioMoney(summary.total_value,currency);
+ document.getElementById("portfolioCash").textContent=portfolioMoney(summary.cash,currency);
+ document.getElementById("portfolioProfitLoss").textContent=portfolioMoney(summary.unrealised_profit_loss,currency);
+ document.getElementById("portfolioProfitLoss").className=Number(summary.unrealised_profit_loss||0)>=0?"on":"off";
+ document.getElementById("portfolioProfitLossPct").textContent=`${Number(summary.unrealised_profit_loss_pct||0)>=0?"+":""}${Number(summary.unrealised_profit_loss_pct||0).toFixed(2)}%`;
+ document.getElementById("portfolioPositionCount").textContent=summary.position_count??0;
+ document.getElementById("portfolioCurrency").textContent=`Account currency: ${currency}`;
+ document.getElementById("portfolioEnvironment").textContent=`${portfolioData.environment||"live"} • read only`;
+
+ const allocation=portfolioData.allocation||[];
+ document.getElementById("portfolioAllocation").innerHTML=allocation.slice(0,10).map(row=>`<div class="alignment-bar"><strong>${row.ticker}</strong><div class="track"><div class="fill" style="width:${Math.min(100,row.weight_pct)}%"></div></div><span class="rank-score">${Number(row.weight_pct).toFixed(1)}%</span></div>`).join("")||'<div class="message">No positions returned.</div>';
+
+ const winners=(portfolioData.winners||[]).slice(0,3),losers=(portfolioData.losers||[]).slice(0,3);
+ document.getElementById("portfolioMovers").innerHTML=`<h4>Top performers</h4>${winners.map(row=>`<div class="provider"><span>${row.name}<br><small>${row.ticker}</small></span><strong class="${row.profit_loss_pct>=0?"on":"off"}">${row.profit_loss_pct>=0?"+":""}${Number(row.profit_loss_pct).toFixed(2)}%</strong></div>`).join("")||"<p>No data.</p>"}<h4 style="margin-top:18px">Weakest performers</h4>${losers.map(row=>`<div class="provider"><span>${row.name}<br><small>${row.ticker}</small></span><strong class="${row.profit_loss_pct>=0?"on":"off"}">${row.profit_loss_pct>=0?"+":""}${Number(row.profit_loss_pct).toFixed(2)}%</strong></div>`).join("")||"<p>No data.</p>"}`;
+
+ const weights=Object.fromEntries(allocation.map(row=>[row.ticker,row.weight_pct]));
+ document.getElementById("portfolioHoldingsBody").innerHTML=sortedPortfolioPositions().map(row=>`<tr><td><strong>${row.name}</strong><br><small>${row.ticker}${row.currency?` • ${row.currency}`:""}</small></td><td>${Number(row.quantity).toLocaleString("en-GB",{maximumFractionDigits:6})}</td><td>${Number(row.average_price).toFixed(4)}</td><td>${Number(row.current_price).toFixed(4)}</td><td>${portfolioMoney(row.current_value,currency)}</td><td>${Number(weights[row.ticker]||0).toFixed(2)}%</td><td class="${row.profit_loss>=0?"on":"off"}">${portfolioMoney(row.profit_loss,currency)}</td><td class="${row.profit_loss_pct>=0?"on":"off"}">${row.profit_loss_pct>=0?"+":""}${Number(row.profit_loss_pct).toFixed(2)}%</td></tr>`).join("")||'<tr><td colspan="8">No holdings returned.</td></tr>';
+
+ document.getElementById("portfolioDividends").innerHTML=(portfolioData.dividends||[]).map(row=>{
+  const amount=row.amount??row.totalAmount??row.value??0,ticker=row.ticker||row.instrument?.ticker||"Dividend",paid=row.paidOn||row.paidAt||row.date||row.createdAt||"",divCurrency=row.currency||row.currencyCode||currency;
+  return `<div class="provider"><span>${ticker}<br><small>${paid?new Date(paid).toLocaleDateString("en-GB"):"Date unavailable"}</small></span><strong>${portfolioMoney(amount,divCurrency)}</strong></div>`;
+ }).join("")||'<div class="message">No dividend records returned, or dividend-history permission is not enabled.</div>';
+}
+async function loadPortfolio(force=false){
+ const status=document.getElementById("portfolioRefreshStatus");
+ status.textContent=force?"Refreshing portfolio…":"Connecting to Trading 212…";status.className="status";
+ try{
+  const response=await fetch(`/api/portfolio/trading212${force?"?force=true":""}`),payload=await response.json();
+  if(!response.ok)throw new Error(payload.detail||"Trading 212 request failed.");
+  portfolioData=payload;
+ }catch(error){
+  portfolioData={configured:true,connected:false,message:error.message,summary:{},positions:[],allocation:[],dividends:[]};
+ }
+ renderPortfolio();
+}
+
 async function loadAll(){
  try{
   const [cotRes,newsRes,providersRes,calendarRes,macroRes,marketsRes,briefRes,setupsRes]=await Promise.all([fetch("/api/cot"),fetch("/api/news"),fetch("/api/providers"),fetch("/api/calendar"),fetch("/api/macro"),fetch("/api/markets"),fetch("/api/brief"),fetch("/api/setups")]);
@@ -1661,6 +1763,8 @@ document.getElementById("overviewMarket").addEventListener("change",renderInterp
 document.getElementById("cotMarket").addEventListener("change",async()=>{await loadCotOverlay(document.getElementById("cotMarket").value);renderCotChart()});
 ["chartMode","showCommercial","showNoncommercial","showPriceCandles"].forEach(id=>document.getElementById(id).addEventListener("change",renderCotChart));
 document.getElementById("priceCandleOpacity").addEventListener("input",renderCotChart);
+document.getElementById("refreshPortfolio").addEventListener("click",()=>loadPortfolio(true));
+document.getElementById("portfolioSort").addEventListener("change",renderPortfolio);
 document.getElementById("metalSelect").addEventListener("change",renderMetals);
 ["newsImpact","newsSource","newsCategory","newsMarket"].forEach(id=>document.getElementById(id).addEventListener("change",renderNews));
 document.getElementById("reloadNews").addEventListener("click",async()=>{const p=await (await fetch("/api/news")).json();newsMeta=p.data||p;newsData=newsMeta.items||[];populateNewsFilters();renderNews()});
@@ -1692,6 +1796,7 @@ document.getElementById("alignmentCount").addEventListener("change",renderAlignm
 document.getElementById("alignmentPairSelect").addEventListener("change",renderAlignmentDetail);
 document.getElementById("loadPairSeasonality").addEventListener("click",loadDirectPairSeasonality);
 loadAutoSeasonalityStatus();loadSeasonality().then(loadDirectPairSeasonality);loadAll();
+loadPortfolio();
 </script>
 </body>
 </html>
