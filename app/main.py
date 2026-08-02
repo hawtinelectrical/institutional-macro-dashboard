@@ -91,6 +91,22 @@ FREE_MARKET_PROXIES: dict[str, dict[str, str]] = {
 # The free Twelve Data plan is respected by splitting the universe into
 # two groups of no more than eight symbols.
 
+
+# Synthetic USD basket used when an official DXY time series is unavailable.
+# The weights match the six-currency ICE USDX basket. The series is rebased to
+# 100 at its first common observation and is clearly labelled as synthetic.
+SYNTHETIC_DXY_COMPONENTS: dict[str, dict[str, Any]] = {
+    "EUR": {"symbol": "EUR/USD", "stooq": "eurusd", "exponent": -0.576},
+    "JPY": {"symbol": "USD/JPY", "stooq": "usdjpy", "exponent": 0.136},
+    "GBP": {"symbol": "GBP/USD", "stooq": "gbpusd", "exponent": -0.119},
+    "CAD": {"symbol": "USD/CAD", "stooq": "usdcad", "exponent": 0.091},
+    "SEK": {"symbol": "USD/SEK", "stooq": "usdsek", "exponent": 0.042},
+    "CHF": {"symbol": "USD/CHF", "stooq": "usdchf", "exponent": 0.036},
+}
+SYNTHETIC_DXY_CACHE_TTL = timedelta(hours=8)
+_synthetic_dxy_cache: dict[str, Any] = {}
+_synthetic_dxy_cache_time: datetime | None = None
+
 COT_PRICE_OVERLAY_SYMBOLS: dict[str, dict[str, Any]] = {
     "USD": {"symbols": ["DXY", "DXY:ICE", "UUP"], "label": "US Dollar Index", "fallback_label": "UUP Dollar Index ETF proxy"},
     "AUD": {"symbols": ["6A1!", "6A1!:CME", "AUD/USD"], "label": "Australian Dollar futures", "fallback_label": "AUD/USD spot fallback"},
@@ -2171,7 +2187,37 @@ def _prepare_overlay(values: list[dict[str, Any]], invert: bool = False) -> list
 
 
 async def cot_price_overlay(market: str) -> dict[str, Any]:
+
     market = market.upper()
+    
+    if market == "USD":
+        synthetic = await synthetic_dxy_history()
+        if synthetic.get("available") and synthetic.get("candles"):
+            return {
+                "configured": True,
+                "market": "USD",
+                "symbol": synthetic["symbol"],
+                "source_label": synthetic["source_label"],
+                "fallback_used": True,
+                "synthetic": True,
+                "candles": synthetic["candles"],
+                "providers": synthetic.get("providers", {}),
+                "weights": synthetic.get("weights", {}),
+                "message": synthetic["message"],
+            }
+    
+        uup = await uup_weekly_fallback()
+        if uup.get("available") and uup.get("candles"):
+            return {
+                "configured": True,
+                "market": "USD",
+                "symbol": uup["symbol"],
+                "source_label": uup["source_label"],
+                "fallback_used": True,
+                "synthetic": False,
+                "candles": uup["candles"],
+                "message": uup["message"],
+            }
     definition = COT_PRICE_OVERLAY_SYMBOLS.get(market)
     if not definition:
         return {"configured": False, "candles": [], "message": "No overlay mapping exists."}
@@ -2770,6 +2816,698 @@ def market_engine_status() -> dict[str, Any]:
     }
 
 
+
+async def _stooq_fx_daily(
+    client: httpx.AsyncClient,
+    stooq_symbol: str,
+    days: int = 900,
+) -> list[dict[str, Any]]:
+    response = await client.get(
+        "https://stooq.com/q/d/l/",
+        params={
+            "s": stooq_symbol,
+            "i": "d",
+            "d1": (date.today() - timedelta(days=days)).strftime("%Y%m%d"),
+            "d2": date.today().strftime("%Y%m%d"),
+        },
+        headers={"User-Agent": "InstitutionalTerminal/9.3"},
+    )
+    response.raise_for_status()
+    lines = response.text.strip().splitlines()
+    if len(lines) < 20:
+        return []
+
+    rows: list[dict[str, Any]] = []
+    for line in lines[1:]:
+        parts = line.split(",")
+        if len(parts) < 5:
+            continue
+        try:
+            rows.append(
+                {
+                    "date": parts[0],
+                    "open": float(parts[1]),
+                    "high": float(parts[2]),
+                    "low": float(parts[3]),
+                    "close": float(parts[4]),
+                }
+            )
+        except (TypeError, ValueError):
+            continue
+    return rows
+
+
+async def _twelve_fx_daily(
+    client: httpx.AsyncClient,
+    symbol: str,
+    api_key: str,
+) -> list[dict[str, Any]]:
+    response = await client.get(
+        "https://api.twelvedata.com/time_series",
+        params={
+            "symbol": symbol,
+            "interval": "1day",
+            "outputsize": 700,
+            "apikey": api_key,
+            "format": "JSON",
+            "order": "ASC",
+        },
+    )
+    if response.status_code == 429:
+        return []
+    response.raise_for_status()
+    payload = response.json()
+    values = payload.get("values", [])
+    rows = []
+    for row in values:
+        try:
+            rows.append(
+                {
+                    "date": str(row.get("datetime", ""))[:10],
+                    "open": float(row["open"]),
+                    "high": float(row["high"]),
+                    "low": float(row["low"]),
+                    "close": float(row["close"]),
+                }
+            )
+        except (KeyError, TypeError, ValueError):
+            continue
+    return rows
+
+
+async def _component_fx_history(
+    client: httpx.AsyncClient,
+    definition: dict[str, Any],
+    api_key: str | None,
+) -> tuple[list[dict[str, Any]], str]:
+    # Stooq is attempted first for the synthetic basket because it is free and
+    # avoids consuming Twelve Data credits for six component series.
+    try:
+        rows = await _stooq_fx_daily(client, definition["stooq"])
+        if len(rows) >= 100:
+            return rows, "Stooq"
+    except Exception:
+        pass
+
+    if api_key:
+        try:
+            rows = await _twelve_fx_daily(client, definition["symbol"], api_key)
+            if len(rows) >= 100:
+                return rows, "Twelve Data"
+        except Exception:
+            pass
+
+    return [], "Unavailable"
+
+
+def _fx_rows_by_date(rows: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    return {row["date"]: row for row in rows if row.get("date")}
+
+
+def _geometric_index_value(
+    component_rows: dict[str, dict[str, Any]],
+    field: str,
+) -> float:
+    value = 1.0
+    for component, definition in SYNTHETIC_DXY_COMPONENTS.items():
+        rate = float(component_rows[component][field])
+        if rate <= 0:
+            raise ValueError("Synthetic DXY component rate must be positive.")
+        value *= rate ** float(definition["exponent"])
+    return value
+
+
+def _daily_to_weekly_ohlc(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    weekly: dict[tuple[int, int], list[dict[str, Any]]] = {}
+    for row in rows:
+        try:
+            dt = date.fromisoformat(row["date"])
+        except (TypeError, ValueError):
+            continue
+        iso = dt.isocalendar()
+        weekly.setdefault((iso.year, iso.week), []).append(row)
+
+    output = []
+    for key in sorted(weekly):
+        group = sorted(weekly[key], key=lambda row: row["date"])
+        output.append(
+            {
+                "date": group[-1]["date"],
+                "open": group[0]["open"],
+                "high": max(row["high"] for row in group),
+                "low": min(row["low"] for row in group),
+                "close": group[-1]["close"],
+            }
+        )
+    return output
+
+
+async def synthetic_dxy_history(force: bool = False) -> dict[str, Any]:
+    global _synthetic_dxy_cache, _synthetic_dxy_cache_time
+
+    now = datetime.now(timezone.utc)
+    if (
+        not force
+        and _synthetic_dxy_cache
+        and _synthetic_dxy_cache_time
+        and now - _synthetic_dxy_cache_time < SYNTHETIC_DXY_CACHE_TTL
+    ):
+        return {**_synthetic_dxy_cache, "cache": "hit"}
+
+    api_key = os.getenv("TWELVE_DATA_API_KEY")
+    component_data: dict[str, dict[str, dict[str, Any]]] = {}
+    providers: dict[str, str] = {}
+    missing = []
+
+    async with httpx.AsyncClient(timeout=50, follow_redirects=True) as client:
+        for component, definition in SYNTHETIC_DXY_COMPONENTS.items():
+            rows, provider = await _component_fx_history(client, definition, api_key)
+            providers[component] = provider
+            if len(rows) < 100:
+                missing.append(component)
+            component_data[component] = _fx_rows_by_date(rows)
+
+    if missing:
+        return {
+            "available": False,
+            "source_label": "Synthetic USD basket",
+            "missing_components": missing,
+            "providers": providers,
+            "candles": [],
+            "message": "Synthetic DXY could not be calculated because one or more FX components were unavailable.",
+        }
+
+    common_dates = set.intersection(
+        *(set(component_data[component].keys()) for component in SYNTHETIC_DXY_COMPONENTS)
+    )
+    ordered_dates = sorted(common_dates)
+    if len(ordered_dates) < 100:
+        return {
+            "available": False,
+            "source_label": "Synthetic USD basket",
+            "missing_components": [],
+            "providers": providers,
+            "candles": [],
+            "message": "The six FX components did not have enough overlapping dates.",
+        }
+
+    raw_rows = []
+    for dt in ordered_dates:
+        selected = {
+            component: component_data[component][dt]
+            for component in SYNTHETIC_DXY_COMPONENTS
+        }
+        try:
+            open_value = _geometric_index_value(selected, "open")
+            close_value = _geometric_index_value(selected, "close")
+
+            # Geometric synthetic high/low are approximations based on the
+            # component daily extremes. This is suitable for background context,
+            # not for execution or official settlement comparison.
+            high_value = _geometric_index_value(
+                {
+                    component: {
+                        **row,
+                        "high": (
+                            row["low"]
+                            if SYNTHETIC_DXY_COMPONENTS[component]["exponent"] < 0
+                            else row["high"]
+                        ),
+                    }
+                    for component, row in selected.items()
+                },
+                "high",
+            )
+            low_value = _geometric_index_value(
+                {
+                    component: {
+                        **row,
+                        "low": (
+                            row["high"]
+                            if SYNTHETIC_DXY_COMPONENTS[component]["exponent"] < 0
+                            else row["low"]
+                        ),
+                    }
+                    for component, row in selected.items()
+                },
+                "low",
+            )
+            raw_rows.append(
+                {
+                    "date": dt,
+                    "open": open_value,
+                    "high": max(high_value, open_value, close_value),
+                    "low": min(low_value, open_value, close_value),
+                    "close": close_value,
+                }
+            )
+        except (KeyError, TypeError, ValueError, ZeroDivisionError):
+            continue
+
+    if len(raw_rows) < 100:
+        return {
+            "available": False,
+            "source_label": "Synthetic USD basket",
+            "providers": providers,
+            "candles": [],
+            "message": "Not enough valid synthetic observations were produced.",
+        }
+
+    base = raw_rows[0]["close"]
+    rebased = []
+    for row in raw_rows:
+        rebased.append(
+            {
+                "date": row["date"],
+                "open": round(row["open"] / base * 100, 4),
+                "high": round(row["high"] / base * 100, 4),
+                "low": round(row["low"] / base * 100, 4),
+                "close": round(row["close"] / base * 100, 4),
+            }
+        )
+
+    weekly = _daily_to_weekly_ohlc(rebased)[-156:]
+    result = {
+        "available": True,
+        "market": "USD",
+        "symbol": "SYNTHETIC_DXY",
+        "source_label": "Synthetic USD basket",
+        "official_index": False,
+        "rebased": True,
+        "base_value": 100,
+        "providers": providers,
+        "weights": {
+            "EUR": 57.6,
+            "JPY": 13.6,
+            "GBP": 11.9,
+            "CAD": 9.1,
+            "SEK": 4.2,
+            "CHF": 3.6,
+        },
+        "candles": weekly,
+        "daily": rebased[-700:],
+        "message": (
+            "Synthetic six-currency USD basket, rebased to 100. "
+            "Designed for trend context and not presented as the official ICE DXY level."
+        ),
+    }
+    _synthetic_dxy_cache = result
+    _synthetic_dxy_cache_time = datetime.now(timezone.utc)
+    return result
+
+
+async def uup_weekly_fallback() -> dict[str, Any]:
+    try:
+        async with httpx.AsyncClient(timeout=45, follow_redirects=True) as client:
+            rows = await _stooq_daily_series(client, "UUP")
+        if len(rows) < 100:
+            return {"available": False, "candles": []}
+        prepared = [
+            {
+                "date": str(row.get("datetime", ""))[:10],
+                "open": float(row["open"]),
+                "high": float(row["high"]),
+                "low": float(row["low"]),
+                "close": float(row["close"]),
+            }
+            for row in rows
+        ]
+        return {
+            "available": True,
+            "market": "USD",
+            "symbol": "UUP",
+            "source_label": "UUP Dollar Index ETF proxy",
+            "official_index": False,
+            "fallback_used": True,
+            "candles": _daily_to_weekly_ohlc(prepared)[-156:],
+            "message": "UUP ETF proxy used because official and synthetic DXY series were unavailable.",
+        }
+    except Exception:
+        return {"available": False, "candles": []}
+
+
+
+# ---------------------------------------------------------------------------
+# Version 10: 28-pair Currency Strength Matrix
+# ---------------------------------------------------------------------------
+
+CURRENCY_MATRIX_CURRENCIES = ["EUR", "GBP", "AUD", "NZD", "USD", "CAD", "CHF", "JPY"]
+
+CURRENCY_MATRIX_PAIRS: list[tuple[str, str]] = [
+    ("EUR", "GBP"), ("EUR", "AUD"), ("EUR", "NZD"), ("EUR", "USD"),
+    ("EUR", "CAD"), ("EUR", "CHF"), ("EUR", "JPY"),
+    ("GBP", "AUD"), ("GBP", "NZD"), ("GBP", "USD"), ("GBP", "CAD"),
+    ("GBP", "CHF"), ("GBP", "JPY"),
+    ("AUD", "NZD"), ("AUD", "USD"), ("AUD", "CAD"), ("AUD", "CHF"),
+    ("AUD", "JPY"),
+    ("NZD", "USD"), ("NZD", "CAD"), ("NZD", "CHF"), ("NZD", "JPY"),
+    ("USD", "CAD"), ("USD", "CHF"), ("USD", "JPY"),
+    ("CAD", "CHF"), ("CAD", "JPY"),
+    ("CHF", "JPY"),
+]
+
+STOOQ_MATRIX_SYMBOLS: dict[str, str] = {
+    "EURGBP": "eurgbp", "EURAUD": "euraud", "EURNZD": "eurnzd",
+    "EURUSD": "eurusd", "EURCAD": "eurcad", "EURCHF": "eurchf",
+    "EURJPY": "eurjpy", "GBPAUD": "gbpaud", "GBPNZD": "gbpnzd",
+    "GBPUSD": "gbpusd", "GBPCAD": "gbpcad", "GBPCHF": "gbpchf",
+    "GBPJPY": "gbpjpy", "AUDNZD": "audnzd", "AUDUSD": "audusd",
+    "AUDCAD": "audcad", "AUDCHF": "audchf", "AUDJPY": "audjpy",
+    "NZDUSD": "nzdusd", "NZDCAD": "nzdcad", "NZDCHF": "nzdchf",
+    "NZDJPY": "nzdjpy", "USDCAD": "usdcad", "USDCHF": "usdchf",
+    "USDJPY": "usdjpy", "CADCHF": "cadchf", "CADJPY": "cadjpy",
+    "CHFJPY": "chfjpy",
+}
+
+_currency_matrix_cache: dict[str, Any] = {}
+_currency_matrix_updated_at: datetime | None = None
+_currency_matrix_lock = asyncio.Lock()
+CURRENCY_MATRIX_CACHE_TTL = timedelta(hours=6)
+
+
+def _matrix_pair_name(base: str, quote: str) -> str:
+    return f"{base}{quote}"
+
+
+async def _matrix_daily_rows(
+    client: httpx.AsyncClient,
+    pair: str,
+) -> tuple[list[dict[str, Any]], str]:
+    stooq_symbol = STOOQ_MATRIX_SYMBOLS[pair]
+    try:
+        response = await client.get(
+            "https://stooq.com/q/d/l/",
+            params={
+                "s": stooq_symbol,
+                "i": "d",
+                "d1": (date.today() - timedelta(days=150)).strftime("%Y%m%d"),
+                "d2": date.today().strftime("%Y%m%d"),
+            },
+            headers={"User-Agent": "InstitutionalTerminal/10.0"},
+        )
+        response.raise_for_status()
+        lines = response.text.strip().splitlines()
+        rows = []
+        for line in lines[1:]:
+            parts = line.split(",")
+            if len(parts) < 5:
+                continue
+            try:
+                rows.append(
+                    {
+                        "date": parts[0],
+                        "open": float(parts[1]),
+                        "high": float(parts[2]),
+                        "low": float(parts[3]),
+                        "close": float(parts[4]),
+                    }
+                )
+            except (TypeError, ValueError):
+                continue
+        if len(rows) >= 30:
+            return rows, "Stooq"
+    except Exception:
+        pass
+
+    api_key = os.getenv("TWELVE_DATA_API_KEY")
+    if not api_key:
+        return [], "Unavailable"
+
+    try:
+        response = await client.get(
+            "https://api.twelvedata.com/time_series",
+            params={
+                "symbol": f"{pair[:3]}/{pair[3:]}",
+                "interval": "1day",
+                "outputsize": 120,
+                "apikey": api_key,
+                "format": "JSON",
+                "order": "ASC",
+            },
+        )
+        if response.status_code == 429:
+            return [], "Unavailable"
+        response.raise_for_status()
+        payload = response.json()
+        rows = []
+        for row in payload.get("values", []):
+            try:
+                rows.append(
+                    {
+                        "date": str(row.get("datetime", ""))[:10],
+                        "open": float(row["open"]),
+                        "high": float(row["high"]),
+                        "low": float(row["low"]),
+                        "close": float(row["close"]),
+                    }
+                )
+            except (KeyError, TypeError, ValueError):
+                continue
+        return rows, "Twelve Data" if len(rows) >= 30 else "Unavailable"
+    except Exception:
+        return [], "Unavailable"
+
+
+def _completed_daily_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    cleaned = []
+    today = date.today().isoformat()
+    for row in rows:
+        try:
+            current = {
+                "date": str(row["date"])[:10],
+                "open": float(row["open"]),
+                "high": float(row["high"]),
+                "low": float(row["low"]),
+                "close": float(row["close"]),
+            }
+            if min(current["open"], current["high"], current["low"], current["close"]) <= 0:
+                continue
+            cleaned.append(current)
+        except (KeyError, TypeError, ValueError):
+            continue
+
+    cleaned.sort(key=lambda row: row["date"])
+    if cleaned and cleaned[-1]["date"] == today:
+        cleaned = cleaned[:-1]
+    return cleaned[-65:]
+
+
+def _confirmed_swings(
+    rows: list[dict[str, Any]],
+    left: int = 2,
+    right: int = 2,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    highs: list[dict[str, Any]] = []
+    lows: list[dict[str, Any]] = []
+
+    for index in range(left, len(rows) - right):
+        window = rows[index - left:index + right + 1]
+        high = rows[index]["high"]
+        low = rows[index]["low"]
+
+        if high == max(row["high"] for row in window):
+            if not highs or high != highs[-1]["price"]:
+                highs.append(
+                    {"date": rows[index]["date"], "price": high, "index": index}
+                )
+
+        if low == min(row["low"] for row in window):
+            if not lows or low != lows[-1]["price"]:
+                lows.append(
+                    {"date": rows[index]["date"], "price": low, "index": index}
+                )
+
+    return highs, lows
+
+
+def _score_pair_structure(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    highs, lows = _confirmed_swings(rows)
+    if len(highs) < 2 or len(lows) < 2:
+        return {
+            "pair_score": 0,
+            "pattern": "Insufficient data",
+            "trend": "No trend",
+            "reason": "Two confirmed highs and two confirmed lows are required.",
+            "recent_highs": highs[-2:],
+            "recent_lows": lows[-2:],
+        }
+
+    previous_high, latest_high = highs[-2], highs[-1]
+    previous_low, latest_low = lows[-2], lows[-1]
+
+    higher_high = latest_high["price"] > previous_high["price"]
+    lower_high = latest_high["price"] < previous_high["price"]
+    higher_low = latest_low["price"] > previous_low["price"]
+    lower_low = latest_low["price"] < previous_low["price"]
+
+    if higher_high and higher_low:
+        pair_score = 1
+        pattern = "A"
+        trend = "Uptrend"
+        reason = "Higher highs and higher lows."
+    elif lower_high and lower_low:
+        pair_score = -1
+        pattern = "B"
+        trend = "Downtrend"
+        reason = "Lower highs and lower lows."
+    elif higher_high and lower_low:
+        pair_score = 0
+        pattern = "C"
+        trend = "No trend"
+        reason = "Higher highs but lower lows."
+    elif lower_high and higher_low:
+        pair_score = 0
+        pattern = "D"
+        trend = "No trend"
+        reason = "Lower highs but higher lows."
+    else:
+        pair_score = 0
+        pattern = "No agreement"
+        trend = "No trend"
+        reason = "The latest confirmed highs and lows do not form an agreed cycle."
+
+    return {
+        "pair_score": pair_score,
+        "pattern": pattern,
+        "trend": trend,
+        "reason": reason,
+        "higher_high": higher_high,
+        "lower_high": lower_high,
+        "higher_low": higher_low,
+        "lower_low": lower_low,
+        "recent_highs": [previous_high, latest_high],
+        "recent_lows": [previous_low, latest_low],
+        "last_completed_candle": rows[-1]["date"] if rows else None,
+    }
+
+
+def _pair_trade_direction(
+    pair: str,
+    base_score: int,
+    quote_score: int,
+) -> str:
+    if base_score > quote_score:
+        return f"Long {pair}"
+    if base_score < quote_score:
+        return f"Short {pair}"
+    return "Neutral"
+
+
+async def refresh_currency_matrix() -> dict[str, Any]:
+    global _currency_matrix_cache, _currency_matrix_updated_at
+
+    async with _currency_matrix_lock:
+        currency_scores = {currency: 0 for currency in CURRENCY_MATRIX_CURRENCIES}
+        pair_rows = []
+
+        async with httpx.AsyncClient(timeout=50, follow_redirects=True) as client:
+            for base, quote in CURRENCY_MATRIX_PAIRS:
+                pair = _matrix_pair_name(base, quote)
+                raw_rows, provider = await _matrix_daily_rows(client, pair)
+                rows = _completed_daily_rows(raw_rows)
+                structure = _score_pair_structure(rows)
+                pair_score = int(structure["pair_score"])
+
+                # Pair uptrend: base +1, quote -1.
+                # Pair downtrend: base -1, quote +1.
+                currency_scores[base] += pair_score
+                currency_scores[quote] -= pair_score
+
+                pair_rows.append(
+                    {
+                        "pair": pair,
+                        "base": base,
+                        "quote": quote,
+                        "base_award": pair_score,
+                        "quote_award": -pair_score,
+                        "provider": provider,
+                        "days": len(rows),
+                        "available": len(rows) >= 20,
+                        **structure,
+                    }
+                )
+
+        ranking = sorted(
+            [
+                {
+                    "currency": currency,
+                    "score": score,
+                    "classification": (
+                        "Strong" if score >= 4
+                        else "Bullish" if score >= 1
+                        else "Weak" if score <= -4
+                        else "Bearish" if score <= -1
+                        else "Neutral"
+                    ),
+                }
+                for currency, score in currency_scores.items()
+            ],
+            key=lambda row: (row["score"], row["currency"]),
+            reverse=True,
+        )
+
+        score_map = {row["currency"]: row["score"] for row in ranking}
+        opportunities = []
+        for base, quote in CURRENCY_MATRIX_PAIRS:
+            pair = _matrix_pair_name(base, quote)
+            base_score = score_map[base]
+            quote_score = score_map[quote]
+            difference = base_score - quote_score
+            opportunities.append(
+                {
+                    "pair": pair,
+                    "base": base,
+                    "quote": quote,
+                    "base_score": base_score,
+                    "quote_score": quote_score,
+                    "difference": difference,
+                    "strength_gap": abs(difference),
+                    "direction": _pair_trade_direction(pair, base_score, quote_score),
+                }
+            )
+
+        opportunities.sort(
+            key=lambda row: (row["strength_gap"], row["pair"]),
+            reverse=True,
+        )
+
+        payload = {
+            "methodology": {
+                "history": "Approximately two months of completed daily candles",
+                "swing_confirmation": "Two candles either side",
+                "pattern_A": "Higher highs and higher lows: base +1, quote -1",
+                "pattern_B": "Lower highs and lower lows: base -1, quote +1",
+                "pattern_C": "Higher highs and lower lows: both 0",
+                "pattern_D": "Lower highs and higher lows: both 0",
+                "score_range": "-7 to +7",
+                "pair_count": 28,
+            },
+            "ranking": ranking,
+            "pairs": pair_rows,
+            "opportunities": opportunities,
+            "strongest": ranking[0] if ranking else None,
+            "weakest": ranking[-1] if ranking else None,
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+            "automatic": True,
+            "schedule": "Recalculated every six hours from completed daily candles.",
+        }
+
+        _currency_matrix_cache = payload
+        _currency_matrix_updated_at = datetime.now(timezone.utc)
+        return payload
+
+
+async def currency_matrix_data() -> dict[str, Any]:
+    if (
+        _currency_matrix_cache
+        and _currency_matrix_updated_at
+        and datetime.now(timezone.utc) - _currency_matrix_updated_at
+        < CURRENCY_MATRIX_CACHE_TTL
+    ):
+        return _currency_matrix_cache
+    return await refresh_currency_matrix()
+
+
 scheduler = AsyncIOScheduler(timezone="UTC")
 
 
@@ -2790,6 +3528,13 @@ async def lifespan(_: FastAPI):
         "interval",
         minutes=20,
         id="resilient-market-cache-refresh",
+        replace_existing=True,
+    )
+    scheduler.add_job(
+        refresh_currency_matrix,
+        "interval",
+        hours=6,
+        id="currency-strength-matrix-refresh",
         replace_existing=True,
     )
     scheduler.add_job(
@@ -2825,11 +3570,12 @@ async def lifespan(_: FastAPI):
     scheduler.start()
     if is_stale():
         asyncio.create_task(refresh_cot())
+    asyncio.create_task(refresh_currency_matrix())
     yield
     scheduler.shutdown(wait=False)
 
 
-app = FastAPI(title="Institutional Market Intelligence Terminal v9.2 Trading 212 Cash Parser Fix", lifespan=lifespan)
+app = FastAPI(title="Institutional Market Intelligence Terminal v10 Pair Structure Currency Matrix", lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
@@ -2988,6 +3734,22 @@ async def get_pair_seasonality(
 @app.get("/api/cot/price-overlay/{market}")
 async def get_cot_price_overlay(market: str) -> dict[str, Any]:
     return await cot_price_overlay(market)
+
+
+
+@app.get("/api/dxy/synthetic")
+async def get_synthetic_dxy(force: bool = False) -> dict[str, Any]:
+    return await synthetic_dxy_history(force=force)
+
+
+@app.get("/api/currency-strength-matrix")
+async def get_currency_strength_matrix() -> dict[str, Any]:
+    return await currency_matrix_data()
+
+
+@app.post("/api/currency-strength-matrix/refresh")
+async def refresh_currency_strength_matrix() -> dict[str, Any]:
+    return await refresh_currency_matrix()
 
 
 @app.get("/api/markets")
