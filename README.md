@@ -1,30 +1,27 @@
-# Version 9.1 — Trading 212 Stability and 104-Week COT
+# Version 9.2 — Trading 212 Cash Parser Fix
 
-## Trading 212 fixes
+## Fault identified
 
-- Prevents `Unexpected token 'I' ... is not valid JSON`
-- Every portfolio error now returns structured JSON
-- Shows exact diagnostics for:
-  - incorrect key or secret
-  - live/demo mismatch
-  - missing read permissions
-  - rate limits
-  - timeout
-  - network errors
-  - invalid API responses
-- Dividend-history errors no longer break holdings and account data
-- Adds a visible connection-diagnostics panel
-- No credentials are displayed or sent to the browser
+Trading 212 returned the account `cash` field as a nested JSON object. The
+previous parser attempted to call `float()` on that object, causing:
 
-## COT chart
+```text
+TypeError: float() argument must be a string or a real number, not 'dict'
+```
 
-- Displays the most recent 104 weeks
-- Commercial and Non-commercial lines use the same 104-week range
-- Background DXY/futures candles use that same two-year range
-- 104 weeks is the default fixed view
-- Candle opacity and visibility controls remain available
+## Fix
 
-## Replace in GitHub
+- Safely reads numbers from nested Trading 212 response objects
+- Supports `total`, `available`, `free`, `value`, `amount`, `cash`,
+  `currentValue` and `totalValue`
+- Safely reads nested account currency fields
+- Falls back to calculated portfolio value when the API omits a total
+- Keeps the structured error diagnostics from Version 9.1
+- Keeps the 104-week COT chart and background-candle view
+
+## Update GitHub
+
+Replace:
 
 - `app/main.py`
 - `app/static/index.html`
@@ -34,4 +31,4 @@ Keep `app/providers/`.
 
 Commit:
 
-`Version 9.1 Trading 212 stability and 104 week COT`
+`Version 9.2 Trading 212 cash parser fix`
