@@ -139,9 +139,10 @@ footer{text-align:center;color:#7d92aa;padding:18px}
   <button class="nav" data-page="alignment">Alignment Engine</button>
   <button class="nav" data-page="outlooks">Outlooks</button>
   <button class="nav" data-page="portfolio">My Portfolio</button>
+  <button class="nav" data-page="dataengine">Data Engine</button>
   <button class="nav" data-page="providers">Data Connections</button>
  </nav>
- <div class="version">Version 8.6<br>My Portfolio</div>
+ <div class="version">Version 9.1<br>T212 Stability + 104W COT</div>
 </aside>
 
 <main class="content">
@@ -212,6 +213,7 @@ footer{text-align:center;color:#7d92aa;padding:18px}
    <label class="toggle"><input id="showNoncommercial" type="checkbox" checked> Non-commercials</label>
    <label class="toggle"><input id="showPriceCandles" type="checkbox" checked> Price candles</label>
    <label>Price opacity <input id="priceCandleOpacity" type="range" min="5" max="45" value="20" step="5"></label>
+   <span class="status live">History: 104 weeks</span>
    <label>Graph <select id="chartMode"><option value="net">Net position</option><option value="change">Weekly buying / selling</option></select></label>
   </div>
   <div id="cotChart" class="chart-wrap"></div><div id="cotPriceOverlayStatus" class="status">Price overlay loading…</div>
@@ -627,6 +629,10 @@ footer{text-align:center;color:#7d92aa;padding:18px}
   </label>
   <span id="portfolioRefreshStatus" class="status">Waiting for connection</span>
  </div>
+ <article class="panel red">
+  <div class="heading"><div><h3>Connection diagnostics</h3><p>Authentication and permissions without displaying credentials.</p></div></div>
+  <div id="portfolioDiagnostics"></div>
+ </article>
  <div class="cols">
   <article class="panel blue"><div class="heading"><div><h3>Allocation</h3><p>Largest positions by current value.</p></div></div><div id="portfolioAllocation"></div></article>
   <article class="panel green"><div class="heading"><div><h3>Winners and losers</h3><p>Unrealised percentage performance.</p></div></div><div id="portfolioMovers"></div></article>
@@ -642,6 +648,28 @@ footer{text-align:center;color:#7d92aa;padding:18px}
  </article>
 </section>
 
+
+<section id="dataengine" class="page">
+ <div class="hero">
+  <div class="kicker">RESILIENT MARKET DATA</div>
+  <h2>Data Engine</h2>
+  <p>Shared caching and automatic fallback reduce Twelve Data usage and keep the dashboard working when its quota is reached.</p>
+ </div>
+ <div class="grid4">
+  <article class="metric"><span>Primary</span><strong>Twelve Data</strong><small>Specialist symbols and first choice</small></article>
+  <article class="metric"><span>Fallback</span><strong>Stooq</strong><small>Supported ETFs and proxies</small></article>
+  <article class="metric"><span>Market cache</span><strong>20 min</strong><small>Shared by all browser requests</small></article>
+  <article class="metric"><span>Daily history</span><strong>8 hours</strong><small>Far fewer provider calls</small></article>
+ </div>
+ <div class="controls"><button id="refreshDataEngine">Refresh shared cache</button><span id="dataEngineRefreshStatus" class="status">Loading…</span></div>
+ <div class="cols">
+  <article class="panel green"><div class="heading"><div><h3>Providers</h3><p>Each source has a defined role.</p></div></div><div id="dataEngineProviders"></div></article>
+  <article class="panel blue"><div class="heading"><div><h3>Cache policy</h3><p>Refreshes match how quickly each dataset changes.</p></div></div><div id="dataEnginePolicy"></div></article>
+ </div>
+ <article class="panel purple"><div class="heading"><div><h3>Current cache</h3><p>Data already available without another external request.</p></div></div><div id="dataEngineCache"></div></article>
+ <article class="panel gold"><div class="interpretation neutral"><h4>Quota protection</h4><p>Global markets refresh once every 20 minutes on the server. Daily price history remains cached for eight hours. Repeated browser refreshes no longer repeatedly call Twelve Data.</p><p>When Twelve Data is rate-limited, supported symbols automatically switch to Stooq and display the provider used.</p></div></article>
+</section>
+
 <section id="providers" class="page">
  <div class="hero"><div class="kicker">DATA CONNECTIONS</div><h2>Provider Status</h2><p>Live sources are shown clearly. Provider keys are stored privately in Render environment variables, never in the browser.</p></div>
  <article class="panel blue"><div id="providerList"></div></article>
@@ -655,6 +683,7 @@ footer{text-align:center;color:#7d92aa;padding:18px}
 <script>
 let cotData=null, newsData=[], newsMeta={}, providerData={}, calendarData={configured:false,events:[]}, macroData={}, marketsData={}, briefData={}, setupData=[];
 let portfolioData={configured:false,connected:false,summary:{},positions:[],allocation:[],dividends:[]};
+let dataEngineStatus={providers:[],cache_policy:{},cached_items:[]};
 let cotOverlay={candles:[]};let cotOverlayMarket=null;
 let activeHorizon="Daily";
 const months=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
@@ -736,7 +765,7 @@ function nearestOverlayCandles(rows,candles){
  });
 }
 function drawChart(targetId,market,mode="net",showC=true,showN=true){
- const rows=allCotMarkets()[market]||[],target=document.getElementById(targetId);
+ const allRows=allCotMarkets()[market]||[],rows=allRows.slice(-104),target=document.getElementById(targetId);
  if(!rows.length){target.innerHTML='<div class="message">No COT data available.</div>';return}
  const width=760,height=290,pad=42;
  const cVals=rows.map((r,i)=>mode==="net"?r.commercial_net:(i?r.commercial_net-rows[i-1].commercial_net:0));
@@ -1734,17 +1763,88 @@ function renderPortfolio(){
   return `<div class="provider"><span>${ticker}<br><small>${paid?new Date(paid).toLocaleDateString("en-GB"):"Date unavailable"}</small></span><strong>${portfolioMoney(amount,divCurrency)}</strong></div>`;
  }).join("")||'<div class="message">No dividend records returned, or dividend-history permission is not enabled.</div>';
 }
+async function readJsonSafely(response){
+ const raw=await response.text();
+ if(!raw)return {payload:{message:"Empty server response.",error:{code:"empty_response"}},valid:false};
+ try{return {payload:JSON.parse(raw),valid:true}}
+ catch{
+  return {
+   payload:{
+    message:raw.startsWith("Internal Server Error")
+      ?"The dashboard server returned an internal error. Check the Render log for /api/portfolio/trading212."
+      :"The server response was not valid JSON.",
+    error:{code:"invalid_json_response",message:"The server response was not valid JSON."}
+   },
+   valid:false
+  };
+ }
+}
+function renderPortfolioDiagnostics(){
+ const target=document.getElementById("portfolioDiagnostics");
+ const d=portfolioData.diagnostics||{},error=portfolioData.error||null;
+ const rows=[
+  ["Environment",portfolioData.environment||d.environment||"Unknown"],
+  ["Connection",portfolioData.connected?"Connected":"Not connected"],
+  ["Read-only",portfolioData.read_only===false?"No":"Yes"],
+  ["Account summary",d.account_summary||"Not confirmed"],
+  ["Positions",d.positions||"Not confirmed"],
+  ["Dividends",d.dividends||"Not confirmed"],
+ ];
+ target.innerHTML=`<div class="evidence">${rows.map(([k,v])=>`<div><span>${k}</span><strong>${v}</strong></div>`).join("")}</div>
+ ${error?`<div class="interpretation bearish"><h4>${error.code||"Connection error"}</h4><p>${error.message||portfolioData.message||"Trading 212 connection failed."}</p></div>`:""}
+ ${(d.warnings||[]).filter(Boolean).map(w=>`<div class="interpretation neutral"><h4>${w.code||"Warning"}</h4><p>${w.message||""}</p></div>`).join("")}`;
+}
 async function loadPortfolio(force=false){
  const status=document.getElementById("portfolioRefreshStatus");
- status.textContent=force?"Refreshing portfolio…":"Connecting to Trading 212…";status.className="status";
+ status.textContent=force?"Refreshing portfolio…":"Connecting to Trading 212…";
+ status.className="status";
  try{
-  const response=await fetch(`/api/portfolio/trading212${force?"?force=true":""}`),payload=await response.json();
-  if(!response.ok)throw new Error(payload.detail||"Trading 212 request failed.");
-  portfolioData=payload;
+  const response=await fetch(`/api/portfolio/trading212${force?"?force=true":""}`);
+  const parsed=await readJsonSafely(response);
+  const payload=parsed.payload||{};
+  if(!parsed.valid){
+   portfolioData={
+    configured:true,connected:false,environment:"live",read_only:true,
+    message:payload.message,error:payload.error,
+    summary:{},positions:[],allocation:[],dividends:[],diagnostics:{}
+   };
+  }else{
+   portfolioData=payload;
+  }
  }catch(error){
-  portfolioData={configured:true,connected:false,message:error.message,summary:{},positions:[],allocation:[],dividends:[]};
+  portfolioData={
+   configured:true,connected:false,environment:"live",read_only:true,
+   message:error.message,error:{code:"browser_request_error",message:error.message},
+   summary:{},positions:[],allocation:[],dividends:[],diagnostics:{}
+  };
  }
  renderPortfolio();
+ renderPortfolioDiagnostics();
+}
+
+
+function renderDataEngine(){
+ const status=document.getElementById("dataEngineRefreshStatus");
+ status.textContent=dataEngineStatus.twelve_data_configured?"Twelve Data and fallback active":"Stooq fallback active";
+ status.className=`status ${dataEngineStatus.twelve_data_configured?"live":"error"}`;
+ document.getElementById("dataEngineProviders").innerHTML=(dataEngineStatus.providers||[]).map(row=>`<div class="provider"><span>${row.name}<br><small>${row.role}</small></span><strong>${row.name==="Twelve Data"?(dataEngineStatus.twelve_data_configured?"Configured":"Quota/key unavailable"):"Available"}</strong></div>`).join("");
+ document.getElementById("dataEnginePolicy").innerHTML=Object.entries(dataEngineStatus.cache_policy||{}).map(([key,value])=>`<div class="provider"><span>${key.replaceAll("_"," ")}</span><strong>${value}</strong></div>`).join("");
+ document.getElementById("dataEngineCache").innerHTML=(dataEngineStatus.cached_items||[]).map(row=>`<div class="provider"><span>${row.key}<br><small>${new Date(row.updated_at).toLocaleString("en-GB")}</small></span><strong>${Math.round(row.age_seconds/60)} min old</strong></div>`).join("")||'<div class="message">The shared cache will populate when market data is first loaded.</div>';
+}
+async function loadDataEngineStatus(){
+ try{dataEngineStatus=await (await fetch("/api/market-engine/status")).json()}
+ catch{dataEngineStatus={providers:[],cache_policy:{},cached_items:[],twelve_data_configured:false}}
+ renderDataEngine();
+}
+async function refreshDataEngine(){
+ const status=document.getElementById("dataEngineRefreshStatus");
+ status.textContent="Refreshing…";status.className="status";
+ try{
+  const response=await fetch("/api/market-engine/refresh",{method:"POST"}),payload=await response.json();
+  if(!response.ok)throw new Error(payload.detail||"Refresh failed");
+  status.textContent=`Refreshed ${payload.markets} markets`;status.className="status live";
+  marketsData=await (await fetch("/api/markets")).json();renderMarkets();await loadDataEngineStatus();
+ }catch(error){status.textContent=error.message;status.className="status error"}
 }
 
 async function loadAll(){
@@ -1764,7 +1864,8 @@ document.getElementById("cotMarket").addEventListener("change",async()=>{await l
 ["chartMode","showCommercial","showNoncommercial","showPriceCandles"].forEach(id=>document.getElementById(id).addEventListener("change",renderCotChart));
 document.getElementById("priceCandleOpacity").addEventListener("input",renderCotChart);
 document.getElementById("refreshPortfolio").addEventListener("click",()=>loadPortfolio(true));
-document.getElementById("portfolioSort").addEventListener("change",renderPortfolio);
+document.getElementById("refreshDataEngine").addEventListener("click",refreshDataEngine);
+document.getElementById("portfolioSort").addEventListener("change",()=>{renderPortfolio();renderPortfolioDiagnostics();});
 document.getElementById("metalSelect").addEventListener("change",renderMetals);
 ["newsImpact","newsSource","newsCategory","newsMarket"].forEach(id=>document.getElementById(id).addEventListener("change",renderNews));
 document.getElementById("reloadNews").addEventListener("click",async()=>{const p=await (await fetch("/api/news")).json();newsMeta=p.data||p;newsData=newsMeta.items||[];populateNewsFilters();renderNews()});
@@ -1797,6 +1898,7 @@ document.getElementById("alignmentPairSelect").addEventListener("change",renderA
 document.getElementById("loadPairSeasonality").addEventListener("click",loadDirectPairSeasonality);
 loadAutoSeasonalityStatus();loadSeasonality().then(loadDirectPairSeasonality);loadAll();
 loadPortfolio();
+loadDataEngineStatus();
 </script>
 </body>
 </html>
