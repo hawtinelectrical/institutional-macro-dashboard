@@ -1,23 +1,85 @@
-# Version 9.2 — Trading 212 Cash Parser Fix
+# Version 10 — Pair-Structure Currency Strength Matrix
 
-## Fault identified
+## Correct scoring method
 
-Trading 212 returned the account `cash` field as a nested JSON object. The
-previous parser attempted to call `float()` on that object, causing:
+The Currency Strength Matrix is now calculated from all 28 daily currency-pair
+charts, not from individual currency futures.
 
-```text
-TypeError: float() argument must be a string or a real number, not 'dict'
-```
+Each pair is analysed from its two most recent confirmed highs and two most
+recent confirmed lows.
 
-## Fix
+### Pattern A
 
-- Safely reads numbers from nested Trading 212 response objects
-- Supports `total`, `available`, `free`, `value`, `amount`, `cash`,
-  `currentValue` and `totalValue`
-- Safely reads nested account currency fields
-- Falls back to calculated portfolio value when the API omits a total
-- Keeps the structured error diagnostics from Version 9.1
-- Keeps the 104-week COT chart and background-candle view
+Higher highs and higher lows:
+
+- Base currency: +1
+- Quote currency: -1
+
+### Pattern B
+
+Lower highs and lower lows:
+
+- Base currency: -1
+- Quote currency: +1
+
+### Pattern C
+
+Higher highs and lower lows:
+
+- Base currency: 0
+- Quote currency: 0
+
+### Pattern D
+
+Lower highs and higher lows:
+
+- Base currency: 0
+- Quote currency: 0
+
+Every currency is represented in seven pairs, so its total score ranges from
+-7 to +7.
+
+## Automatic updates
+
+- Uses completed daily candles only
+- Approximately two months of daily history are analysed
+- Two candles on either side confirm a swing
+- Recalculated at server startup
+- Recalculated automatically every six hours
+- Results are cached server-side
+- Browser reloads do not trigger 28 new provider calls
+
+## Data hierarchy
+
+- Stooq is used first for the 28 ordinary FX pairs
+- Twelve Data is a fallback only
+- This reduces Twelve Data credit usage substantially
+
+## Navigation
+
+The sidebar now groups these pages under **COT Data**:
+
+- COT Positioning
+- Currency Intelligence
+- Currency Strength Matrix
+- Pair Rankings
+- Seasonality
+
+## Pair opportunities
+
+The system ranks the 28 tradable pairs by the absolute difference between the
+base and quote currency totals.
+
+The result is a directional shortlist, not an automatic entry signal.
+
+## Existing features retained
+
+- Exactly 104 COT weeks
+- Exactly 104 matching COT background candles
+- Synthetic DXY
+- Trading 212 parser fixes and diagnostics
+- Seasonality backtesting
+- Resilient market-data caching
 
 ## Update GitHub
 
@@ -27,8 +89,10 @@ Replace:
 - `app/static/index.html`
 - `README.md`
 
-Keep `app/providers/`.
+Keep:
+
+- `app/providers/`
 
 Commit:
 
-`Version 9.2 Trading 212 cash parser fix`
+`Version 10 pair structure currency matrix`
